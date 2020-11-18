@@ -1,0 +1,10 @@
+test_run_dir/
+generated_src/
+
+*.json
+*.v
+*.fir
+*.conf
+
+target/
+project/

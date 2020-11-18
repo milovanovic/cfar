@@ -1,0 +1,3 @@
+[submodule "lis"]
+	path = lis
+	url = https://github.com/milovanovic/lis.git
