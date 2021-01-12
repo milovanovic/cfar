@@ -13,8 +13,9 @@ import scala.util.Random
 class AdjShiftRegStreamTester[T <: Data](dut: AdjustableShiftRegisterStream[T], in: Seq[Double], tol: Int) extends DspTester(dut) {
   
   var cntValidOut = 0
-  val currentDepth = dut.maxDepth
-//  for (currentDepth <- 1 to dut.maxDepth) {
+  // val currentDepth = dut.maxDepth
+  
+  for (currentDepth <- 0 to dut.maxDepth) { // try to run currentDepth to be equal to 0
     poke(dut.io.in.valid, 0)
     poke(dut.io.out.ready, 0)
     poke(dut.io.depth, currentDepth)
@@ -58,7 +59,7 @@ class AdjShiftRegStreamTester[T <: Data](dut: AdjustableShiftRegisterStream[T], 
     }
     cntValidOut = 0
     step(2)
- // }
+  }
 }
 
 object AdjShiftRegStreamTester {
@@ -262,7 +263,7 @@ object ShiftRegMemTester {
 class CFARUtilSpec extends FlatSpec with Matchers {
   behavior of "AdjustableShiftRegisterStream"
   
-  for (maxDepth <- Seq(4)) {
+  for (maxDepth <- Seq(6)) {
     it should s"work with delay = $maxDepth and FixedPoint data input" in {
       AdjShiftRegStreamTester(FixedPoint(16.W, 5.BP), maxDepth, 2) should be (true)
     }
@@ -271,7 +272,7 @@ class CFARUtilSpec extends FlatSpec with Matchers {
   behavior of "CellUnderTest"
   
   val signalDepth = 5
-  it should s"work with FixedPoint data input" ignore {
+  it should s"work with FixedPoint data input" in {
     CellUnderTestTester(FixedPoint(16.W, 5.BP), signalDepth, 2) should be (true)
   }
   

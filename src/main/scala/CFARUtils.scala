@@ -50,7 +50,11 @@ object AdjustableShiftRegister {
     assert(depth <= maxDepth.U)
     
     val activeRegs = Wire(Vec(maxDepth, Bool()))
+    dontTouch(activeRegs)
+    activeRegs.suggestName("activeRegs")
     activeRegs.zipWithIndex.map { case (active, index) => active := (index.U <= depth - 1.U).asBool }
+    //activeRegs.zipWithIndex.map { case (active, index) => active := Mux(depth === 0.U, false.B, (index.U <= depth - 1.U).asBool) }
+
     val out = Wire(Vec(maxDepth, in.cloneType))
     applyReccursive(in, maxDepth, activeRegs, out, resetData, en)
     (out(depth - 1.U), out)
@@ -80,14 +84,14 @@ class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, 
   initialInDone.suggestName("InitialInDone")
   val resetData = 0.U.asTypeOf(io.in.bits)
   val en = io.in.fire() || (last && io.out.ready)
-  // or drop data if io.out.ready is inactive in that case en is:
+  // or drop data if io.out.ready is inactive, in that case en is:
   //val en = io.in.fire() || last
   
   val (adjShiftReg, adjShiftRegOut) = AdjustableShiftRegister.returnOut(io.in.bits, maxDepth, io.depth, resetData, en)
   val cntIn  = RegInit(0.U(log2Ceil(maxDepth + 1).W))
   
   when (io.lastIn && io.in.fire()) {
-    last := true.B 
+    last := true.B
   }
   
   when (io.in.fire()) {
@@ -114,11 +118,13 @@ class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, 
     cntIn := 0.U
   }
  
-  io.in.ready    := ~initialInDone || io.out.ready && ~last // or without ~last
-  io.out.bits    := adjShiftReg
-  io.parallelOut := adjShiftRegOut
-  io.lastOut     := lastOut
-  io.out.valid   := initialInDone && io.in.valid || (last && en)
+  //io.in.ready    := ~initialInDone || io.out.ready && ~last // or without ~last
+  io.in.ready    := Mux(io.depth === 0.U, io.out.ready, ~initialInDone || io.out.ready && ~last)
+  
+  io.out.bits    := Mux(io.depth === 0.U, io.in.bits, adjShiftReg)
+  io.parallelOut := adjShiftRegOut // parallel output is not important
+  io.lastOut     := Mux(io.depth === 0.U, io.lastIn && io.in.fire(), lastOut)
+  io.out.valid   := Mux(io.depth === 0.U, io.in.valid, initialInDone && io.in.valid || (last && en))
 }
 
 // simple RegEnable wrapped with AXI Stream interface
