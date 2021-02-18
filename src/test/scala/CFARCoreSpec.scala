@@ -18,33 +18,51 @@ import breeze.plot._
 import org.scalatest.{FlatSpec, Matchers}
 import scala.util.Random
 
-class CFARThrPlotTester[T <: Data](dut: CFARCore[T], in: Seq[Double], expPeaks: Seq[Int], tol: Int) extends DspTester(dut) {
+class CFARThrPlotTester[T <: Data](dut: CFARCore[T],
+                                   in: Seq[Double],
+                                   thrFactor: Double,
+                                   cfarMode: Int,
+                                   expPeaks: Seq[Int],
+                                   expThr: Seq[Double], 
+                                   tol: Int) extends DspTester(dut) {
   require(dut.params.leadLaggWindowSize > 3 && dut.params.guardWindowSize > 1)
   var cntValidOut = 0
   var threshold: ArrayBuffer[Double] = mutable.ArrayBuffer[Double]()
-  
-  
+
   poke(dut.io.in.valid, 0)
   poke(dut.io.out.ready, 0)
   // initilize control registers
   poke(dut.io.fftWin, dut.params.fftSize)
-  poke(dut.io.thresholdScaler, 3.5)
+  poke(dut.io.thresholdScaler, thrFactor)
   poke(dut.io.peakGrouping, 0)
   
   if (dut.params.CFARAlgorithm == GOSCACFARType) {
     poke(dut.io.cfarAlgorithm.get, 0)
   }
-  poke(dut.io.cfarMode, 3)
+
+  if (dut.params.includeCASH) {
+    poke(dut.io.subCells.get, dut.params.minSubWindowSize.get) // this should gave the same result as CA CFAR
+  }
+
+  poke(dut.io.cfarMode, cfarMode)
   poke(dut.io.logOrLinearMode, 1)
    
   //for (lWinSize <- 4 to dut.params.leadLaggWindowSize) {
-  //  for (guardSize <- 2 to dut.params.guardWindowSize) {
-   val lWinSize = dut.params.leadLaggWindowSize
-   val guardSize = dut.params.guardWindowSize
+  // for (guardSize <- 2 to dut.params.guardWindowSize) {
+      // comment this part here if you want to use values defined inside for expression
+      val lWinSize = dut.params.leadLaggWindowSize
+      val guardSize = dut.params.guardWindowSize
       println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize")
       
       poke(dut.io.windowCells, lWinSize)
-      poke(dut.io.guardCells, guardSize)
+      
+      if (cfarMode == 3) {
+        poke(dut.io.guardCells, 0)
+      }
+      else {
+        poke(dut.io.guardCells, guardSize)
+      }
+
       if (dut.params.CFARAlgorithm != GOSCFARType) {
         poke(dut.io.divSum.get, log2Ceil(lWinSize))
       }
@@ -52,7 +70,7 @@ class CFARThrPlotTester[T <: Data](dut: CFARCore[T], in: Seq[Double], expPeaks: 
         poke(dut.io.indexLead.get, lWinSize/2)
         poke(dut.io.indexLagg.get, lWinSize/2)
       }
-      step(2) // be sure that control registers are first initilized and then run ready and valid signals
+      step(2) // be sure that control registers are first initilized and then set ready and valid signals
       poke(dut.io.out.ready, 1)
       
       for (i <- 0 until in.size) {
@@ -65,8 +83,14 @@ class CFARThrPlotTester[T <: Data](dut: CFARCore[T], in: Seq[Double], expPeaks: 
           poke(dut.io.lastIn, 1)
         if (peek(dut.io.out.valid) == true) {
           dut.params.protoIn match {
-            case dspR: DspReal => realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut,  in(cntValidOut).toDouble) }
-            case _ =>  fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut, in(cntValidOut)) }
+            case dspR: DspReal => {
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut,  in(cntValidOut).toDouble) }
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold,  expThr(cntValidOut)) }
+            }
+            case _ =>  {
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut, in(cntValidOut)) }
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            }
           }
           //fftBin
           if (expPeaks.contains(peek(dut.io.fftBin))) {
@@ -82,51 +106,55 @@ class CFARThrPlotTester[T <: Data](dut: CFARCore[T], in: Seq[Double], expPeaks: 
       poke(dut.io.out.ready, 0)
       step(10)
       poke(dut.io.out.ready, 1)
-      
-      step(50)
-      println(cntValidOut.toString)
-      while (cntValidOut < in.size-1) {
-        if (peek(dut.io.out.valid) == true && peek(dut.io.out.ready)) {
+
+      while (cntValidOut < in.size) {
+        if (peek(dut.io.out.valid) && peek(dut.io.out.ready)) {
           //expect(dut.io.out.bits.cut,  in(cntValidOut))
           dut.params.protoIn match {
-            case dspR: DspReal => realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut,  in(cntValidOut)) }
-            case _ =>  fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut, in(cntValidOut)) }
+            case dspR: DspReal => {
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut, in(cntValidOut)) }
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            }
+            case _ =>  {
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut, in(cntValidOut)) }
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            }
           }
           if (expPeaks.contains(peek(dut.io.fftBin))) {
             expect(dut.io.out.bits.peak, 1)
           }
           threshold += peek(dut.io.out.bits.threshold)
+
           if (cntValidOut == in.size - 1)
             expect(dut.io.lastOut, 1)
           cntValidOut += 1
         }
         step(1)
-      }
-      cntValidOut = 0
-      step(dut.params.leadLaggWindowSize * 2)
-      // here plot threshold and input
-     
-      val f = Figure()
-      val p = f.subplot(0)
-      p.legend_=(true)
-      val xaxis = (0 until dut.params.fftSize).map(e => e.toDouble).toSeq.toArray
-      p.xlabel = "Frequency bin"
-      p.ylabel = "Amplitude"
-      
-      val fftPlot = in.toSeq
-      val thresholdPlot = threshold.toSeq
-      
-      p += plot(xaxis, fftPlot.toArray, name = "Signal")
-      p += plot(xaxis, thresholdPlot.toArray, name = "CFAR threshold") //'.'
-      p.title_=(s"Constant False Alarm Rate")
-      
-      f.saveas(s"test_run_dir/CFARThresholdPlot.pdf")
-    }
-   //}
-//}
+     }
+
+    cntValidOut = 0
+    step(dut.params.leadLaggWindowSize * 2)
+    
+    val f = Figure()
+    val p = f.subplot(0)
+    p.legend_=(true)
+    val xaxis = (0 until dut.params.fftSize).map(e => e.toDouble).toSeq.toArray
+    p.xlabel = "Frequency bin"
+    p.ylabel = "Amplitude"
+
+    val fftPlot = in.toSeq
+    val thresholdPlot = threshold.toSeq
+
+    p += plot(xaxis, fftPlot.toArray, name = "Signal")
+    p += plot(xaxis, thresholdPlot.toArray, name = "CFAR threshold")
+    p.title_=(s"Constant False Alarm Rate")
+
+    f.saveas(s"test_run_dir/CFARThresholdPlot.pdf")
+}
 
 
-//Simple tester, checks only data stream functionality
+
+// Simple tester, checks only data stream functionality
 class CFARStreamTester[T <: Data](dut: CFARCore[T], in: Seq[Double], tol: Int) extends DspTester(dut) {
   require(dut.params.leadLaggWindowSize > 3 && dut.params.guardWindowSize > 1)
   var cntValidOut = 0
@@ -213,25 +241,46 @@ class CFARStreamTester[T <: Data](dut: CFARCore[T], in: Seq[Double], tol: Int) e
 
 
 object CFARTester {
-  def apply[T <: Data : Real: BinaryRepresentation](params: CFARParams[T], tol: Int, thrPlot: Boolean = false): Boolean = {
+  def apply[T <: Data : Real: BinaryRepresentation](params: CFARParams[T],
+                                                    cfarMode: String = "Smallest Of",
+                                                    thrFactor: Double = 3.5,
+                                                    tol: Int = 3,
+                                                    thrPlot: Boolean = false,
+                                                    backend: String = "verilator"): Boolean = {
     require(params.fftSize > 8)
     if (thrPlot == true) {
       val numSamples = params.fftSize
-      //Random.setSeed(11110L)
+      Random.setSeed(11110L) // make same random data vector for every test case
       val noise = (0 until numSamples).map(i => Complex(math.sqrt(Random.nextDouble + Random.nextDouble),0))
-      val s1    = (0 until numSamples).map(i => Complex(0.4 * math.cos(2 * math.Pi * 1/2 * i), 0.4 * math.sin(2 * math.Pi * 1/2 * i)))
-      val s2    = (0 until numSamples).map(i => Complex(0.1 * math.cos(2 * math.Pi * 1/4 * i), 0.1 * math.sin(2 * math.Pi * 1/4 * i)))
-      val s3    = (0 until numSamples).map(i => Complex(0.2 * math.cos(2 * math.Pi * 1/8 * i), 0.2 * math.sin(2 * math.Pi * 1/8 * i)))
-      
+      val s1    = (0 until numSamples).map(i => Complex(0.4 * math.cos(2 * math.Pi * 1/8 * i), 0.4 * math.sin(2 * math.Pi * 1/8 * i)))
+      val s2    = (0 until numSamples).map(i => Complex(0.2 * math.cos(2 * math.Pi * 1/4 * i), 0.2 * math.sin(2 * math.Pi * 1/4 * i)))
+      val s3    = (0 until numSamples).map(i => Complex(0.1 * math.cos(2 * math.Pi * 1/2 * i), 0.1 * math.sin(2 * math.Pi * 1/2 * i)))
+
       // can be simplified
-      val sum   = noise.zip(s1).map { case (a, b) => a + b}.zip(s2).map{ case (c, d) => c + d }.zip(s3).map{ case (e, f)  => e + f }
-      
+      var sum   = noise.zip(s1).map { case (a, b) => a + b}.zip(s2).map{ case (c, d) => c + d }.zip(s3).map{ case (e, f)  => e + f }
+
       val fft = fourierTr(DenseVector(sum.toArray)).toScalaVector
       val testSignal = fft.map(c => math.sqrt(pow(c.real,2) + pow(c.imag,2))) // try c.abs
-      
-      chisel3.iotesters.Driver.execute(Array("-tbn", "verilator"),
+
+      //val testSignal = (0 until params.fftSize).map(c => c.toDouble)
+
+      val cfarModeNum = cfarMode match {
+                          case "Cell Averaging" => 0
+                          case "Greatest Of" => 1
+                          case "Smallest Of" => 2
+                          case "CASH" => 3
+                          case _ => 0
+                        }
+      val considerEdges = if (params.includeCASH == true) false else true
+
+      val (expThr, expPeaks) = if (params.includeCASH && cfarMode == "CASH")
+                                  CFARUtils.cfarCASH(testSignal, referenceCells = params.leadLaggWindowSize, subCells = params.minSubWindowSize.get, scalingFactor = thrFactor, plotEn = true)
+                               else
+                                  CFARUtils.cfarCA(testSignal, cfarMode = cfarMode, referenceCells = params.leadLaggWindowSize, guardCells = params.guardWindowSize, considerEdges = considerEdges, scalingFactor = thrFactor, plotEn = true)
+
+      chisel3.iotesters.Driver.execute(Array("-tbn", backend),
         () => new CFARCore(params)) { c =>
-        new CFARThrPlotTester(c, testSignal, Seq(numSamples/2, numSamples/4, numSamples/8), tol)
+        new CFARThrPlotTester(c, testSignal, cfarMode = cfarModeNum, thrFactor = thrFactor, expThr = expThr, expPeaks = expPeaks, tol = tol)
       }
     }
     else {
@@ -260,7 +309,7 @@ class CFARSpec extends FlatSpec with Matchers {
     protoIn = FixedPoint(16.W, 8.BP),
     protoThreshold = FixedPoint(16.W, 8.BP),
     protoScaler = FixedPoint(16.W, 8.BP),
-    leadLaggWindowSize = 10,
+    leadLaggWindowSize = 16,
     guardWindowSize = 5,
     fftSize = 64
     //pipes are zero
@@ -268,14 +317,14 @@ class CFARSpec extends FlatSpec with Matchers {
   
   // works good!
   it should s"test streaming data core with no pipes" ignore {
-    CFARTester(paramsNoPipes, 2) should be (true)
+    CFARTester(paramsNoPipes, tol = 2) should be (true)
   }
   
   val paramsWithPipes: CFARParams[FixedPoint] = CFARParams(
     protoIn = FixedPoint(16.W, 8.BP),
     protoThreshold = FixedPoint(16.W, 8.BP),
     protoScaler = FixedPoint(16.W, 8.BP),
-    leadLaggWindowSize = 10,
+    leadLaggWindowSize = 16,
     guardWindowSize = 5,
     fftSize = 64,
     numAddPipes = 2,
@@ -283,7 +332,7 @@ class CFARSpec extends FlatSpec with Matchers {
   )
   // works good!
   it should s"test streaming data with pipes" ignore {
-    CFARTester(paramsWithPipes, 2) should be (true)
+    CFARTester(paramsWithPipes, tol = 2) should be (true)
   }
   
   // it should test sliding sum 
@@ -300,7 +349,7 @@ class CFARSpec extends FlatSpec with Matchers {
   )
   // works good!
   it should s"test sliding sum" ignore {
-    CFARTester(paramsTestSum, 2, false) should be (true)
+    CFARTester(paramsTestSum, tol = 2) should be (true)
   }
   
 //   val paramsTestSumWithPipes: CFARParams[FixedPoint] = CFARParams(
@@ -329,24 +378,96 @@ class CFARSpec extends FlatSpec with Matchers {
     numMulPipes = 1
   )
   
-  it should s"plot CFAR threshold for CFAR core with LIS" in { // ignore it because of travis
-    CFARTester(paramsFixedLIS, 2, false) should be (true)
+  it should s"plot CFAR threshold for CFAR core with LIS" ignore { // ignore it because of travis
+    CFARTester(paramsFixedLIS, tol = 2, thrPlot = false) should be (true)
   }
   
   val paramsFixedMem: CFARParams[FixedPoint] = CFARParams(
-    protoIn = FixedPoint(16.W, 4.BP),//DspReal(),
-    protoThreshold = FixedPoint(16.W, 4.BP),//DspReal(),
-    protoScaler = FixedPoint(16.W, 4.BP), //DspReal(),
-    leadLaggWindowSize = 4,
+    protoIn = FixedPoint(16.W, 8.BP),//DspReal(),
+    protoThreshold = FixedPoint(16.W, 8.BP),//DspReal(),
+    protoScaler = FixedPoint(16.W, 8.BP), //DspReal(),
+    leadLaggWindowSize = 4,//16,
     guardWindowSize = 2,
-    fftSize = 32,
+    fftSize = 64,//512,
     CFARAlgorithm = CACFARType,
     numAddPipes = 0,
-    numMulPipes = 1
+    numMulPipes = 0
   )
   
-  it should s"plot CFAR threshold for CFAR core with Mem" ignore { // ignore it because of travis
-    CFARTester(paramsFixedMem, 2, true) should be (true)
+  for (cfarMode <- Seq("Cell Averaging")) {//, "Greatest Of", "Cell Averaging")) {
+    it should s"plot CFAR threshold for CFAR core with Mem and FixedPoint data type and cfarMode = $cfarMode" ignore { // ignore it because of travis
+      CFARTester(paramsFixedMem, tol = 3, cfarMode = cfarMode, thrPlot = true) should be (true)
+    }
+  }
+
+  val paramsDspRealMem: CFARParams[DspReal] = CFARParams(
+    protoIn = DspReal(),
+    protoThreshold = DspReal(),
+    protoScaler = DspReal(),
+    leadLaggWindowSize = 8,//16,
+    guardWindowSize = 2,
+    fftSize = 64,//512,
+    CFARAlgorithm = CACFARType,
+    numAddPipes = 0,
+    numMulPipes = 0
+  )
+
+  for (cfarMode <- Seq("Cell Averaging")) {//, "Greatest Of", "Cell Averaging")) {
+    it should s"plot CFAR threshold for CFAR core with Mem and DspReal data type and cfarMode = $cfarMode" ignore {
+      CFARTester(paramsDspRealMem, tol = 12, cfarMode = cfarMode, thrPlot = true) should be (true)
+    }
+  }
+
+  val paramsFixedCASH: CFARParams[FixedPoint] = CFARParams(
+    protoIn = FixedPoint(16.W, 6.BP),//DspReal(),
+    protoThreshold = FixedPoint(16.W, 6.BP),//DspReal(),
+    protoScaler = FixedPoint(16.W, 6.BP),
+    leadLaggWindowSize = 16,
+    minSubWindowSize = Some(4),
+    guardWindowSize = 2,
+    includeCASH = true,
+    fftSize = 512,
+    CFARAlgorithm = CACFARType,
+    numAddPipes = 0,
+    numMulPipes = 0
+  )
+
+  it should s"plot CFAR threshold for CFAR  CASH and FixedPoint data type" ignore {
+    CFARTester(paramsFixedCASH, tol = 3, cfarMode = "CASH", thrPlot = true) should be (true)
   }
   
+  
+  val paramsFixedCASHTest: CFARParams[FixedPoint] = CFARParams(
+    protoIn = FixedPoint(16.W, 6.BP), //DspReal(),
+    protoThreshold = FixedPoint(16.W, 6.BP), //DspReal(),
+    protoScaler = FixedPoint(16.W, 6.BP),
+    leadLaggWindowSize = 16,
+    minSubWindowSize = Some(4),
+    guardWindowSize = 2,
+    includeCASH = true,
+    fftSize = 64, // 512
+    CFARAlgorithm = CACFARType,
+    numAddPipes = 0,
+    numMulPipes = 0
+  )
+  it should s"plot CFAR threshold for CFAR CASH test" in {
+    CFARTester(paramsFixedCASHTest, tol = 3, cfarMode = "CASH", thrPlot = true) should be (true)
+  }
+
+  val paramsDspRealCASH: CFARParams[DspReal] = CFARParams(
+    protoIn = DspReal(),
+    protoThreshold = DspReal(),
+    protoScaler = DspReal(),
+    leadLaggWindowSize = 16,
+    minSubWindowSize = Some(4),
+    guardWindowSize = 2,
+    includeCASH = true,
+    fftSize = 512,
+    CFARAlgorithm = CACFARType,
+    numAddPipes = 0,
+    numMulPipes = 0
+  )
+  it should s"plot CFAR threshold for CFAR  CASH and DspReal data type" ignore {
+    CFARTester(paramsDspRealCASH, tol = 12, cfarMode = "Smallest Of", thrPlot = true) should be (true)
+  }
 }

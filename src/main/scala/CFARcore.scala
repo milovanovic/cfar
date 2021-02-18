@@ -41,7 +41,8 @@ class CFARIO [T <: Data: Real](params: CFARParams[T]) extends Bundle {
   val cfarMode = Input(UInt(2.W))
   val windowCells = Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))
   val guardCells = Input(UInt(log2Ceil(params.guardWindowSize + 1).W))
-  
+  val subCells = if (params.includeCASH == true) Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None
+
   // Ordered statistic CFAR specific control registers
   val indexLead = if (params.CFARAlgorithm != CACFARType) Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None // Check here log2Ceil
   val indexLagg = if (params.CFARAlgorithm != CACFARType)  Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None
@@ -59,8 +60,7 @@ object CFARIO {
 
 class CFARCore[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T]) extends Module {
   val io = IO(CFARIO(params))
-  val cfarCore = if (params.CFARAlgorithm == CACFARType) Module(new CFARCoreWithMem(params)) else Module(new CFARCoreWithLis(params))
-  
+  val cfarCore = if (params.CFARAlgorithm == CACFARType && params.includeCASH == true) Module(new CFARCoreWithASR(params)) else if (params.CFARAlgorithm == CACFARType && params.includeCASH == false) Module(new CFARCoreWithMem(params)) else Module(new CFARCoreWithLis(params))
 
   // just instatiate appropriate design
   
@@ -86,6 +86,9 @@ class CFARCore[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T
     cfarCore.io.indexLead.get := io.indexLead.get
   }
   
+  if (params.includeCASH) {
+    cfarCore.io.subCells.get := io.subCells.get
+  }
   cfarCore.io.out <> io.out
   io.lastOut := cfarCore.io.lastOut
   io.fftBin := cfarCore.io.fftBin
@@ -96,7 +99,7 @@ object CFARCoreApp extends App
 {
   val params: CFARParams[FixedPoint] =  CFARParams(
     protoIn = FixedPoint(16.W, 8.BP),
-    protoThreshold = FixedPoint(16.W, 8.BP), // output thres
+    protoThreshold = FixedPoint(16.W, 8.BP), // output threshold
     protoScaler = FixedPoint(16.W, 8.BP),
     CFARAlgorithm = CACFARType
    // other parameters are default

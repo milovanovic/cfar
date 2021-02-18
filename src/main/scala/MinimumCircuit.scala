@@ -25,7 +25,8 @@ object FindMin
   def apply[T <: Data: Real](in1: Seq[T], in2: Seq[T], n: Int, size: Option[UInt]): T = {
     require(n > 0, "Input vector size should be positive")
     if (n != 1) {
-      val sel_n = n.U === size.getOrElse(0.U) // if run time is off provide that sel signals are always false
+      val sel_n = n.U === size.getOrElse(0.U)
+      // if run time is off provides that sel signals are always false
       val input_to_min = in1.zip(in2).map { case (a,b) => Mux(sel_n, a, b) }
       val mins = input_to_min.grouped(2).map(pair => Mux(pair(0) < pair(1), pair(0), pair(1)))
       apply(in1.take(n/2), mins.toSeq, n/2, size)
@@ -37,7 +38,7 @@ object FindMin
 
 class MinimumCircuit[T <: Data: Real](val protoIn: T, val n: Int = 16, val runTime: Boolean = true) extends Module {
   require(n > 0 && isPow2(n), "Size of the input vector must be a power of 2 and it should be positive")
-  
+
   val io = IO(new Bundle {
     val in = Input(Vec(n, protoIn))
     val inSize = if (runTime) Some(Input(UInt(log2Up(n+1).W))) else None
@@ -45,13 +46,21 @@ class MinimumCircuit[T <: Data: Real](val protoIn: T, val n: Int = 16, val runTi
   })
   
   val size = io.inSize.getOrElse(n)
-  // val mins_wire = Wire(Vec(n/2, protoIn))
-  // first layer should split input vector to pairs, compare and pass min to the FindMin object
-  val mins = io.in.grouped(2).toSeq.map(pair => Mux(pair(0) < pair(1), pair(0), pair(1)))
-
-  //mins_wire.zip(mins).map { case (a,b) => a := b }
-  val minFinal = FindMin(io.in.take(n/2), mins, n/2, io.inSize)
-  io.out := minFinal
+  
+  if (n != 1) {
+    // first layer should split input vector to pairs, compare and pass min to FindMin object
+    val mins = io.in.grouped(2).toSeq.map(pair => Mux(pair(0) < pair(1), pair(0), pair(1)))
+    val minFinal = FindMin(io.in.take(n/2), mins, n/2, io.inSize)
+    when (io.inSize.get === 1.U) {
+      io.out := io.in(0)
+    }
+    .otherwise {
+      io.out := minFinal
+    }
+  }
+  else {
+    io.out := io.in(0)
+  }
 }
 
 

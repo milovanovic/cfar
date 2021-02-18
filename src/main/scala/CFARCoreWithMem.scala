@@ -9,12 +9,13 @@ import dsptools.numbers._
 
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 
-// core for CACFARType
+// Implements CFAR core that can support cell averaging (CA), greatest of (GO), smallest of CFAR (SO)
+// Leading/lagging windows are implemented via BRAM/SRAM
+
 class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T]) extends Module {
   require(params.CFARAlgorithm == CACFARType)
   
   val io = IO(CFARIO(params))
-  // for suporting peakGrouping AdjustableShiftRegisterStream needs to have parallel outputs!
   val lastCut = RegInit(false.B)
   val flushing = RegInit(false.B)
   val cntIn = RegInit(0.U(log2Ceil(params.fftSize).W))
@@ -27,12 +28,11 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
   //val latency = io.windowCells +& io.guardCells +& 1.U +& (sumPip + thresholdPip).U
   val latency = io.windowCells +& io.guardCells +& 1.U +& thresholdPip.U
   assert(io.fftWin > 2.U * io.windowCells + 2.U * io.guardCells + 1.U, "FFT size must be larger than total number of shifting cells inside CFAR core")
-  val sumT: T = (io.in.bits * log2Ceil(params.leadLaggWindowSize)).cloneType // to be sure that no overflow occured 
-  val sumlagg = RegInit(t = sumT, init = 0.U.asTypeOf(sumT)) // also reset it when state is idle or something similar
+  val sumT: T = (io.in.bits * log2Ceil(params.leadLaggWindowSize)).cloneType // no overflow
+  val sumlagg = RegInit(t = sumT, init = 0.U.asTypeOf(sumT))
   val sumlead = RegInit(t = sumT, init = 0.U.asTypeOf(sumT))
-  
-  val laggWindow    =  Module(new ShiftRegisterMemStream(params.protoIn, params.leadLaggWindowSize)) //Module(new LinearSorter(lisParams))
-  laggWindow.io.in <> io.in // here check flushing also
+  val laggWindow    =  Module(new ShiftRegisterMemStream(params.protoIn, params.leadLaggWindowSize)) 
+  laggWindow.io.in <> io.in
   laggWindow.io.depth := io.windowCells
   laggWindow.io.lastIn := io.lastIn
   
@@ -135,12 +135,22 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
     0.U -> BinaryRepresentation[T].shr(rightThr + leftThr, 1),
     1.U -> greatestOf,
     2.U -> smallestOf))
-  
+
+  val enableRightThr = RegInit(false.B)
+  when (!(laggWindow.io.memFull) && laggWindow.io.out.fire()) {
+    enableRightThr := true.B
+  }
+
+  dontTouch(enableRightThr)
+  enableRightThr.suggestName("enableRightThr")
+
+
   val thrWithoutScaling = Mux(!leadWindow.io.memFull && !laggWindow.io.memFull,
                           0.U.asTypeOf(sumT),
                           Mux(laggWindow.io.memFull && !leadWindow.io.memFull,
                             leftThr,
-                            Mux(!laggWindow.io.memFull && leadWindow.io.memFull,
+                            //Mux((!(laggWindow.io.memFull) && leadWindow.io.memFull,
+                            Mux(enableRightThr,
                               rightThr,
                               thrByModes)))
 
@@ -149,80 +159,45 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
     numMulPipes = thresholdPip)) {
       Mux(io.logOrLinearMode, thrWithoutScaling context_* io.thresholdScaler, thrWithoutScaling context_+ io.thresholdScaler)
   }
-  //val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, sumPip + thresholdPip, en = cellUnderTest.io.out.fire() || (flushing && io.out.ready))
   val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, thresholdPip, en = cellUnderTest.io.out.fire() || (flushing && io.out.ready))
   
-  // initialInDone is maybe going to be Shifted by the number of the pipeline registers
   io.in.ready := ~initialInDone || io.out.ready && ~flushing
-  
-  // peak peakGrouping
-  val leftNeighb  = ShiftRegister(laggGuard.io.parallelOut(io.guardCells - 1), thresholdPip, en = true.B)
-  val rightNeighb = ShiftRegister(leadGuard.io.parallelOut(0), thresholdPip, en = true.B)
-  val isLeftPeak  = leftNeighb  > threshold //consider here pipes
-  val isRightPeak = rightNeighb > threshold
-  val isPeak      = cutDelayed  > threshold
-  // no pipes
+  assert(io.guardCells > 0.U, "Number of guard cells should be greater than 0")
+
+  val leftNeighb  = ShiftRegister(laggGuard.io.parallelOut.last, thresholdPip, en = true.B)
+  val rightNeighb = ShiftRegister(laggGuard.io.parallelOut.head, thresholdPip, en = true.B)
+  val isLocalMax = cutDelayed > leftNeighb && cutDelayed > rightNeighb
+  val isPeak = cutDelayed  > threshold
+ 
   if (params.numAddPipes == 0 && params.numMulPipes == 0) {
     //io.out.bits.peak := cutDelayed > threshold
-    io.out.bits.peak := Mux(io.peakGrouping, isPeak && ~isLeftPeak && ~isRightPeak, isPeak)
+    io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
     io.out.bits.cut  := cutDelayed
     io.out.bits.threshold :=  threshold
     io.out.valid := initialInDone && io.in.fire() || flushing
-    io.fftBin := cntOut //fftBinOnOutput
+    io.fftBin := cntOut
   }
   else {
-    io.out.bits.peak := Mux(io.peakGrouping, isPeak && ~isLeftPeak && ~isRightPeak, isPeak)
+    // TODO: Handle logic for pipeline registers
+    io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
     io.out.bits.cut  := cutDelayed
     io.out.bits.threshold :=  threshold
     io.out.valid := initialInDone && io.in.fire() || flushing
-    io.fftBin := cntOut //fftBinOnOutput
-/*    // How to understand this
-    val skidIn = Wire(io.out.cloneType)
-    skidIn.bits.cut  := io.in.bits.cut
-    skidIn.bits.peak := io.in.bits.peak
-    skidIn.bits.threshold := threshold
-    skidIn.valid := initialInDone && io.in.fire() || (flushing && io.out.ready) *///in.valid
-    
-  //  io.in.ready := skidIn.ready //Mux(estimatingDone, skidIn.ready, estimator.in.ready)
-    
-    
-    // let's try to make this with skid buffer and check utilization for that
-  
-//     // this part here should be the same as it is inside CFARCoreWithLis
-//     //val outQueue =  Module(new Queue(chiselTypeOf(io.out.bits), entries = sumPip + thresholdPip, pipe = true, flow = true)) // +1?
-//     val outQueue = Module(new Queue(chiselTypeOf(io.out.bits), entries = thresholdPip, pipe = true, flow = true))
-//     //outQueue.io.enq.bits.peak := cutDelayed > threshold
-//     outQueue.io.enq.bits.peak := Mux(io.peakGrouping, isPeak && ~isLeftPeak && ~isRightPeak, isPeak) //cutDelayed > threshold
-//     
-//     outQueue.io.enq.bits.cut  := cutDelayed
-//     outQueue.io.enq.bits.threshold := threshold // trim here
-//     outQueue.io.enq.valid := initialInDone && io.in.fire() || (flushing && io.out.ready)
-//     outQueue.io.deq.ready := io.out.ready
-//     
-//    /*
-//     val outBinQueue = Module(new Queue(chiselTypeOf(io.fftBin), entries = thresholdPip, pipe = true, flow = true))
-//     outBinQueue.io.enq.bits := fftBinOnOutput
-//     outBinQueue.io.enq.valid := initialInDone && io.in.fire() || (flushing && io.out.ready)
-//     outBinQueue.io.deq.ready := io.out.ready*/
-//     io.fftBin := cntOut //outBinQueue.io.deq.bits
-//     //assert(outQueue.io.deq.valid === outBinQueue.io.deq.valid, "Must be asserted at the same time")
-//     
-//     io.out.bits.peak := outQueue.io.deq.bits.peak
-//     io.out.bits.cut  := outQueue.io.deq.bits.cut
-//     io.out.bits.threshold := outQueue.io.deq.bits.threshold
-//     io.out.valid := outQueue.io.deq.valid
+    io.fftBin := cntOut
   }
 }
 
 object CFARCoreWithMemApp extends App
 {
-  // just simple test
-  val params: CFARParams[FixedPoint] =  CFARParams(
-    protoIn = FixedPoint(16.W, 8.BP),
-    protoThreshold = FixedPoint(16.W, 8.BP), // output thres
+  val params: CFARParams[FixedPoint] = CFARParams(
+    protoIn = FixedPoint(24.W, 8.BP),
+    protoThreshold = FixedPoint(16.W, 8.BP),
     protoScaler = FixedPoint(16.W, 8.BP),
+    leadLaggWindowSize = 128,
+    fftSize = 1024,
+    guardWindowSize = 4,
     CFARAlgorithm = CACFARType
-   // other parameters are default
+   // other parameters have default values defined in case class CFARParams
   )
   
   chisel3.Driver.execute(args,()=>new CFARCoreWithMem(params))

@@ -4,6 +4,158 @@ import chisel3._
 import chisel3.util._
 import chisel3.internal.{requireIsChiselType, requireIsHardware}
 
+import breeze.linalg._
+import breeze.plot._
+
+import scala.math
+
+object CFARUtils {
+  def factorize(x: Int): List[Int] = {
+    def foo(x: Int, a: Int = 2, list: List[Int] = Nil): List[Int] = a * a > x match {
+      case false if x % a == 0 => foo(x / a, a, a :: list)
+      case false => foo(x, a + 1, list)
+      case true => x :: list
+    }
+    foo(x)
+  }
+
+  def pow2Divisors(n: Int): List[Int] = {
+    val factors = factorize(n)
+    val products = (1 to factors.length).flatMap(i => factors.combinations(i).map(_.product).toList).toList
+    (1 +: products).filter(isPow2(_))
+  }
+
+  // just fast way to implement it
+  def cfarCASH(signal: Seq[Double], referenceCells: Int, subCells: Int,  guardCells: Int = 0, scalingFactor: Double, logMode: Boolean = false, plotEn: Boolean = false): (Seq[Double], Seq[Int]) = {
+    require(referenceCells > 0 & subCells > 0, "Number of reference and sub cells must be positive value")
+    val totalCells = signal.size
+    val numSubs = referenceCells / subCells
+    val windowCells = referenceCells + guardCells
+    var maximums : Seq[Double] = Seq()
+    var threshold : Seq[Double] = Seq()
+    var peakIndices: Seq[Int] = Seq()
+    var subLeadStart = 0
+    var subLeadEnd  = 0
+    
+    // maybe can be implemented in a more elagant way
+    for (ix <- windowCells until totalCells - windowCells) {
+      for (subIx <- ((1 until (numSubs + 1)).reverse)) {
+        subLeadStart = ix - subIx * subCells - guardCells
+        subLeadEnd = ix - (subIx - 1) * subCells - guardCells
+        val subLaggStart = ix + guardCells + (numSubs - subIx) * subCells + 1
+        val subLaggEnd = ix - guardCells + (numSubs - subIx + 1) * subCells + 1
+        val subLeadAvg = signal.slice(subLeadStart, subLeadEnd).sum / subCells
+        val subLaggAvg = signal.slice(subLaggStart, subLaggEnd).sum / subCells
+//         if (ix == windowCells + 1) {
+//           println("Second Sums are:")
+//           println(subLeadAvg)
+//           println(subLaggAvg)
+//         }
+        maximums = maximums :+ Seq(subLeadAvg, subLaggAvg).max
+      }
+      println(maximums.min)
+      val scaledThr = if (logMode)  maximums.min + scalingFactor else  maximums.min * scalingFactor
+      maximums = Seq()
+      threshold = threshold :+ scaledThr
+      if (scaledThr < signal(ix)) peakIndices = peakIndices :+ ix
+    }
+    val edges = Seq.fill(referenceCells)(0.0) // for edges zero should be sent
+    threshold = edges ++ threshold ++ edges
+    if (plotEn == true) {
+      val f = Figure()
+      val p = f.subplot(0)
+      p.legend_=(true)
+      val xaxis = (0 until signal.size).map(e => e.toDouble).toSeq.toArray
+      p.xlabel = "Frequency bin"
+      p.ylabel = "Amplitude"
+
+      val thresholdPlot = threshold.toSeq
+
+      p += plot(xaxis, signal.toArray, name = "FFT input Signal")
+      p += plot(xaxis, threshold.toArray, name = "CFAR threshold") //'.'
+      p.title_=(s"Constant False Alarm Rate CASH")
+
+      f.saveas(s"test_run_dir/CFAR_CASH_ScalaThresholdPlot.pdf")
+    }
+    (threshold, peakIndices)
+  }
+
+  def cfarCA(signal: Seq[Double], cfarMode: String, referenceCells: Int, guardCells: Int, considerEdges: Boolean = false, scalingFactor: Double, logMode: Boolean = false, plotEn: Boolean = false): (Seq[Double], Seq[Int]) = {
+    require(referenceCells > 0 & guardCells > 0, "Number of reference and sub cells must be positive value")
+    val totalCells = signal.size
+    val windowCells = referenceCells + guardCells
+    var threshold : Seq[Double] = Seq()
+    var peakIndices: Seq[Int] = Seq()
+
+    if (considerEdges) {
+      var thr: Double = 0.0
+      // take into account only one reference window for the edge cells
+      for (ix <- 0 until totalCells) {
+        val leadAvg = if (ix < windowCells) 0 else signal.slice(ix - windowCells, ix - guardCells).sum / referenceCells
+        val laggAvg = if (ix >= (totalCells - windowCells)) 0 else signal.slice(ix + guardCells + 1, ix + windowCells + 1).sum / referenceCells
+        if (ix < windowCells) {
+          thr = laggAvg
+        }
+        else if (ix >= (totalCells - windowCells)) {
+          thr = leadAvg
+        }
+        else {
+          thr = cfarMode match {
+                  case "Cell Averaging" => (leadAvg + laggAvg)/2
+                  case "Smallest Of" => Seq(leadAvg, laggAvg).min
+                  case "Greatest Of" => Seq(leadAvg, laggAvg).max
+                  case _ =>  throw new Exception(s"Unknown CFAR type, try with Cell Averaging, Smallest Of or Greatest Of")
+                }
+        }
+        val scaledThr = if (logMode) thr + scalingFactor else thr * scalingFactor
+        threshold = threshold :+ scaledThr
+        // println("Threshold is")
+        // println(thr)
+        if (scaledThr < signal(ix)) peakIndices :+ ix
+      }
+    }
+    else {
+//       val leadAvg = signal.take(totalCells - windowCells).slide(referenceCells)
+//                           .map(_.sum).toSeq
+//       val laggAvg = signal.drop(windowCells).slide(referenceCells)
+//                           .map(_.sum).toSeq
+      for (ix <- windowCells until (totalCells - windowCells)) {
+        val leadAvg = signal.slice(ix - windowCells, ix - guardCells).sum / referenceCells
+        val laggAvg = signal.slice(ix + guardCells + 1, ix + windowCells + 1).sum / referenceCells
+        val thr = cfarMode match {
+                    case "Cell Averaging" => (leadAvg + laggAvg)/2
+                    case "Smallest Of" => Seq(leadAvg, laggAvg).min
+                    case "Greatest Of" => Seq(leadAvg, laggAvg).max
+                    case _ =>  throw new Exception(s"Unknown CFAR type, try with Cell Averaging, Smallest Of or Greatest Of")
+                  }
+        val scaledThr = if (logMode) thr + scalingFactor else thr * scalingFactor
+        if (scaledThr < signal(ix)) peakIndices = peakIndices :+ ix
+        threshold = threshold :+ scaledThr
+      }
+      val edges: Seq[Double] =  Seq.fill(windowCells)(0.0)
+      threshold = edges ++ threshold ++ edges
+    }
+    
+    if (plotEn == true) {
+      val f = Figure()
+      val p = f.subplot(0)
+      p.legend_=(true)
+      val xaxis = (0 until signal.size).map(e => e.toDouble).toSeq.toArray
+      p.xlabel = "Frequency bin"
+      p.ylabel = "Amplitude"
+      
+      val thresholdPlot = threshold.toSeq
+      
+      p += plot(xaxis, signal.toArray, name = "FFT input Signal")
+      p += plot(xaxis, threshold.toArray, name = "CFAR threshold") //'.'
+      p.title_=(s"Constant False Alarm Rate")
+      
+      f.saveas(s"test_run_dir/CFAR_CA_ScalaThresholdPlot.pdf")
+    }
+    (threshold, peakIndices)
+  }
+}
+
 // maybe reset initialization is not necessary
 object AdjustableShiftRegister {
 
@@ -16,18 +168,6 @@ object AdjustableShiftRegister {
     else
       in
   }
-  // returns parallel output of the ShiftRegister also
-//   def apply[T <: Data](in: T, maxDepth: Int, depth: UInt, resetData: T, parallelOut: Boolean, en: Bool = true.B): (T, Vec[T]) = {
-//     require(maxDepth > 0)
-//     requireIsHardware(in)
-//     assert(depth <= maxDepth.U)
-//     
-//     val activeRegs = Wire(Vec(maxDepth, Bool()))
-//     activeRegs.zipWithIndex.map { case (active, index) => active := (index.U <= depth - 1.U).asBool }
-//     val out = Wire(Vec(maxDepth, in.cloneType))
-//     applyReccursive(in, maxDepth, activeRegs, out, resetData, en)
-//     (out(depth - 1.U), out)
-//   }
   
   def apply[T <: Data](in: T, maxDepth: Int, depth: UInt, resetData: T, en: Bool = true.B): T = {
     require(maxDepth > 0)
@@ -75,6 +215,9 @@ class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, 
     val out         = Decoupled(proto.cloneType)
     val lastOut     = Output(Bool())
     val parallelOut = Output(Vec(maxDepth, proto))
+    
+    val regFull     = Output(Bool())
+    val regEmpty    = Output(Bool())
   })
   
   val initialInDone = RegInit(false.B)
@@ -117,7 +260,9 @@ class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, 
     last := false.B
     cntIn := 0.U
   }
- 
+  
+  io.regEmpty  := cntIn === 0.U && ~initialInDone
+  io.regFull   := initialInDone && ~last
   //io.in.ready    := ~initialInDone || io.out.ready && ~last // or without ~last
   io.in.ready    := Mux(io.depth === 0.U, io.out.ready, ~initialInDone || io.out.ready && ~last)
   

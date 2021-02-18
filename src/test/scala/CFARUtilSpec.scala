@@ -261,6 +261,7 @@ object ShiftRegMemTester {
 
 
 class CFARUtilSpec extends FlatSpec with Matchers {
+
   behavior of "AdjustableShiftRegisterStream"
   
   for (maxDepth <- Seq(6)) {

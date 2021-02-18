@@ -24,7 +24,7 @@ class MinimumCircuitTester[T <: Data: Real](dut: MinimumCircuit[T], tol: Int) ex
     }
     for (size <- pow2Coll) {
       var min = testSignal.take(size).min
-      // define all inputs even though some of them are not consider for min calculation
+      // define all inputs even though some of them are not considered for min calculation
       testSignal.zipWithIndex.foreach { case (sample, index) => poke(dut.io.in(index), sample)}
       poke(dut.io.inSize.get, size)
       dut.protoIn match {
