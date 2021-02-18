@@ -49,7 +49,7 @@ class CFARThrPlotTester[T <: Data](dut: CFARCore[T],
    
   //for (lWinSize <- 4 to dut.params.leadLaggWindowSize) {
   // for (guardSize <- 2 to dut.params.guardWindowSize) {
-      // comment this part here if you want to use values defined inside for expression
+      // comment this part here if you want to use values defined inside 'for' expression
       val lWinSize = dut.params.leadLaggWindowSize
       val guardSize = dut.params.guardWindowSize
       println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize")
