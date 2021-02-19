@@ -10,15 +10,15 @@ import dsptools.numbers._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import chisel3.internal.requireIsHardware
 
-class CFAROutFields [T <: Data: Real] (protoIn: T, protoThreshold: T) extends Bundle {
+class CFAROutFields [T <: Data: Real] (protoIn: T, protoThreshold: T, sendCut: Boolean) extends Bundle {
   requireIsChiselType(protoIn)
   requireIsChiselType(protoThreshold)
   
   val peak           = Output(Bool())         // define whether the cut is peak or not
-  val cut            = Output(protoIn)        // cell under test
+  val cut            = if (sendCut) Some(Output(protoIn)) else None        // cell under test
   val threshold      = Output(protoThreshold) // threshold
   
-  override def cloneType: this.type = new CFAROutFields(protoIn, protoThreshold).asInstanceOf[this.type] // must have cloneType
+  override def cloneType: this.type = new CFAROutFields(protoIn, protoThreshold, sendCut).asInstanceOf[this.type] // must have cloneType
 }
 
 // object CFAROutFields {
@@ -47,8 +47,9 @@ class CFARIO [T <: Data: Real](params: CFARParams[T]) extends Bundle {
   val indexLead = if (params.CFARAlgorithm != CACFARType) Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None // Check here log2Ceil
   val indexLagg = if (params.CFARAlgorithm != CACFARType)  Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None
 
-  val out = Decoupled(new CFAROutFields(params.protoIn, params.protoThreshold))
+  val out = Decoupled(new CFAROutFields(params.protoIn, params.protoThreshold, params.sendCut))
   val lastOut = Output(Bool())
+  // can be moved to CFAROutFields
   val fftBin  = Output(UInt(log2Ceil(params.fftSize).W))
  
   override def cloneType: this.type = CFARIO(params).asInstanceOf[this.type]

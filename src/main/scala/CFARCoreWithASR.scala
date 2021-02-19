@@ -288,7 +288,8 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
 
   if (params.numAddPipes == 0 && params.numMulPipes == 0) {
     io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
-    io.out.bits.cut  := cutDelayed
+    if (params.sendCut)
+      io.out.bits.cut.get := cutDelayed
     io.out.bits.threshold :=  threshold
     io.out.valid := initialInDone && io.in.fire() || flushing
     io.fftBin := cntOut
@@ -296,7 +297,8 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   else {
     // TODO: Add logic for pipeline registers
     io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
-    io.out.bits.cut  := cutDelayed
+    if (params.sendCut)
+      io.out.bits.cut.get := cutDelayed
     io.out.bits.threshold :=  threshold
     io.out.valid := initialInDone && io.in.fire() || flushing
     io.fftBin := cntOut

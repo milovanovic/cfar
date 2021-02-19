@@ -22,17 +22,18 @@ case object CACFARType  extends CFARType
 case object GOSCACFARType extends CFARType 
 
 case class CFARParams[T <: Data: Real](
-  protoIn               : T, // Data type of the input data
-  protoThreshold        : T, // Data type of the threshold
-  protoScaler           : T, // Data type of the scaler
+  protoIn               : T,                        // Data type of the input data
+  protoThreshold        : T,                        // Data type of the threshold
+  protoScaler           : T,                        // Data type of the scaler
   CFARAlgorithm         : CFARType = GOSCACFARType, // CFAR algorithm
-  includeCASH           : Boolean = false, // provides CFAR cash algorithm besides algoritms defined inside CFARAlgorithm
-  minSubWindowSize      : Option[Int] = None,          // relevant only for CASH algoithm 
-  leadLaggWindowSize    : Int = 16,   // maximum number of leading/lagging cells
-  guardWindowSize       : Int = 4,    // maximum number of guard cells
-  fftSize               : Int = 1024, // maximum fft size
-  numAddPipes           : Int = 0,    // number of add pipeline registers
-  numMulPipes           : Int = 0     // number of mull pipeline registers
+  includeCASH           : Boolean = false,          // provides CFAR cash algorithm besides algoritms defined inside CFARAlgorithm
+  minSubWindowSize      : Option[Int] = None,       // relevant only for CASH algoithm 
+  leadLaggWindowSize    : Int = 16,                 // maximum number of leading/lagging cells
+  sendCut               : Boolean = true,           // enable output for cell under test
+  guardWindowSize       : Int = 4,                  // maximum number of guard cells
+  fftSize               : Int = 1024,               // maximum fft size
+  numAddPipes           : Int = 0,                  // number of add pipeline registers
+  numMulPipes           : Int = 0                   // number of mull pipeline registers
   ) {
   // requireIsPow2?
   
@@ -40,7 +41,7 @@ case class CFARParams[T <: Data: Real](
   require(leadLaggWindowSize > 0 & guardWindowSize > 0)
   require(leadLaggWindowSize  > guardWindowSize)
   if (includeCASH == true)
-    require(minSubWindowSize != None & minSubWindowSize.get > 0, "If includeCash parameter is set then minSubWindowSize needs to be defined and should be positive value")
+    require(minSubWindowSize != None & minSubWindowSize.get > 0, "If includeCash parameter is set then minSubWindowSize needs to be defined as a positive value")
 
   requireIsChiselType(protoIn)
   requireIsChiselType(protoThreshold)

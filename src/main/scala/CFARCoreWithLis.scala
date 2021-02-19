@@ -181,7 +181,8 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   if (params.numAddPipes == 0 && params.numMulPipes == 0) {
     //io.out.bits.peak := cutDelayed > threshold
     io.out.bits.peak := Mux(io.peakGrouping, isPeak && ~isLeftPeak && ~isRightPeak, isPeak)
-    io.out.bits.cut  := cutDelayed
+    if (params.sendCut)
+      io.out.bits.cut.get := cutDelayed
     io.out.bits.threshold :=  threshold
     io.out.valid := initialInDone && io.in.fire() || flushing
     io.fftBin := cntOut //fftBinOnOutput
@@ -191,8 +192,10 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
     val outQueue = Module(new Queue(chiselTypeOf(io.out.bits), entries = thresholdPip, pipe = false, flow = true))
     //outQueue.io.enq.bits.peak := cutDelayed > threshold
     outQueue.io.enq.bits.peak := Mux(io.peakGrouping, isPeak && ~isLeftPeak && ~isRightPeak, isPeak) 
+    if (params.sendCut) {
+      outQueue.io.enq.bits.cut.get := cutDelayed
+    }
     
-    outQueue.io.enq.bits.cut := cutDelayed
     outQueue.io.enq.bits.threshold := threshold // trim here
     outQueue.io.enq.valid := initialInDone && ShiftRegister(io.in.fire(), thresholdPip, false.B, true.B) || flushing
     outQueue.io.deq.ready := io.out.ready
@@ -212,7 +215,8 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
     
     io.lastOut := outLastQueue.io.deq.bits
     io.out.bits.peak := outQueue.io.deq.bits.peak
-    io.out.bits.cut  := outQueue.io.deq.bits.cut
+    if (params.sendCut)
+      io.out.bits.cut.get  := outQueue.io.deq.bits.cut.get
     io.out.bits.threshold := outQueue.io.deq.bits.threshold
     io.out.valid := outQueue.io.deq.valid
   }

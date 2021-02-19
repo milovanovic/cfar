@@ -31,7 +31,7 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val sumT: T = (io.in.bits * log2Ceil(params.leadLaggWindowSize)).cloneType // no overflow
   val sumlagg = RegInit(t = sumT, init = 0.U.asTypeOf(sumT))
   val sumlead = RegInit(t = sumT, init = 0.U.asTypeOf(sumT))
-  val laggWindow    =  Module(new ShiftRegisterMemStream(params.protoIn, params.leadLaggWindowSize)) 
+  val laggWindow    =  Module(new ShiftRegisterMemStream(params.protoIn, params.leadLaggWindowSize))
   laggWindow.io.in <> io.in
   laggWindow.io.depth := io.windowCells
   laggWindow.io.lastIn := io.lastIn
@@ -130,7 +130,6 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val greatestOf = Mux(leftThr > rightThr, leftThr, rightThr)
   val smallestOf = Mux(leftThr < rightThr, leftThr, rightThr)
   
-  //BinaryRepresentation[T].shr(v, 1)
   val thrByModes = MuxLookup(io.cfarMode, smallestOf, Array(
     0.U -> BinaryRepresentation[T].shr(rightThr + leftThr, 1),
     1.U -> greatestOf,
@@ -172,7 +171,9 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
   if (params.numAddPipes == 0 && params.numMulPipes == 0) {
     //io.out.bits.peak := cutDelayed > threshold
     io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
-    io.out.bits.cut  := cutDelayed
+    if (params.sendCut)
+      io.out.bits.cut.get := cutDelayed
+    //io.out.bits.cut  := cutDelayed
     io.out.bits.threshold :=  threshold
     io.out.valid := initialInDone && io.in.fire() || flushing
     io.fftBin := cntOut
@@ -180,7 +181,8 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
   else {
     // TODO: Handle logic for pipeline registers
     io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
-    io.out.bits.cut  := cutDelayed
+    if (params.sendCut)
+      io.out.bits.cut.get := cutDelayed
     io.out.bits.threshold :=  threshold
     io.out.valid := initialInDone && io.in.fire() || flushing
     io.fftBin := cntOut

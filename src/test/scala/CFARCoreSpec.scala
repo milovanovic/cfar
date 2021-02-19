@@ -18,11 +18,310 @@ import breeze.plot._
 import org.scalatest.{FlatSpec, Matchers}
 import scala.util.Random
 
+// test CA and CASH algorithm
+
+class CFARCATester[T <: Data](dut: CFARCore[T],
+                                   in: Seq[Double],
+                                   thrFactor: Double,
+                                   cfarMode: String,
+                                   thrPlot: Boolean,
+                                   considerEdges: Boolean,
+                                   runTime: Boolean,
+                                   tol: Int) extends DspTester(dut) {
+
+  require(dut.params.leadLaggWindowSize > 3 && dut.params.guardWindowSize > 1)
+  require(dut.params.CFARAlgorithm == CACFARType)
+  require(dut.params.sendCut == true)
+  
+  var cntValidOut = 0
+  var threshold: ArrayBuffer[Double] = mutable.ArrayBuffer[Double]()
+  var lwinSizes: Array[Int] = Array()
+  var guardSizes: Array[Int] = Array()
+  
+  poke(dut.io.in.valid, 0)
+  poke(dut.io.out.ready, 0)
+  // initilize control registers
+  poke(dut.io.fftWin, dut.params.fftSize)
+  poke(dut.io.thresholdScaler, thrFactor)
+  poke(dut.io.peakGrouping, 0)
+  
+  if (dut.params.includeCASH) {
+    poke(dut.io.subCells.get, dut.params.minSubWindowSize.get)
+  }
+  
+  val cfarModeNum = cfarMode match {
+                      case "Cell Averaging" => 0
+                      case "Greatest Of" => 1
+                      case "Smallest Of" => 2
+                      case "CASH" => 3
+                      case _ => 0
+                    }
+  
+  poke(dut.io.cfarMode, cfarModeNum)
+  poke(dut.io.logOrLinearMode, 1)
+  val startLwin: Int = if (runTime) 4 else dut.params.leadLaggWindowSize
+  val startGwin: Int = if (runTime) 2 else dut.params.guardWindowSize
+  
+  
+  for (lWinSize <- startLwin to dut.params.leadLaggWindowSize) {
+    for (guardSize <- startGwin to dut.params.guardWindowSize) {
+      println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize")
+      // form here output data
+      
+      val considerEdges = if (dut.params.includeCASH == true) false else true
+      val (expThr, expPeaks) = if (dut.params.includeCASH && cfarMode == "CASH")
+                                  CFARUtils.cfarCASH(in, referenceCells = lWinSize, subCells = dut.params.minSubWindowSize.get, scalingFactor = thrFactor, plotEn = true)
+                               else
+                                  CFARUtils.cfarCA(in, cfarMode = cfarMode, referenceCells = lWinSize, guardCells = guardSize, considerEdges = considerEdges, scalingFactor = thrFactor, plotEn = true)
+      // cash does not use guard cells
+      if (cfarMode == 3) {
+        poke(dut.io.guardCells, 0)
+      }
+      else {
+        poke(dut.io.guardCells, guardSize)
+      }
+      poke(dut.io.windowCells, lWinSize)
+
+      if (dut.params.CFARAlgorithm != GOSCFARType) {
+        poke(dut.io.divSum.get, log2Ceil(lWinSize))
+      }
+      
+      step(2) // be sure that control registers are first initilized and then set ready and valid signals
+      poke(dut.io.out.ready, 1)
+      
+      for (i <- 0 until in.size) {
+        poke(dut.io.in.valid, 0)
+        val delay = 3//Random.nextInt(5)
+        step(delay)
+        poke(dut.io.in.valid, 1)
+        poke(dut.io.in.bits, in(i))
+        if (i == (in.size - 1))
+          poke(dut.io.lastIn, 1)
+        if (peek(dut.io.out.valid) == true) {
+          dut.params.protoIn match {
+            case dspR: DspReal => {
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get,  in(cntValidOut).toDouble) }
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            }
+            case _ =>  {
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            }
+          }
+          //fftBin
+          if (expPeaks.contains(peek(dut.io.fftBin))) {
+            expect(dut.io.out.bits.peak, 1)
+          }
+          cntValidOut += 1
+          threshold += peek(dut.io.out.bits.threshold)
+        }
+        step(1)
+      }
+      poke(dut.io.lastIn, 0)
+      poke(dut.io.in.valid, 0)
+      poke(dut.io.out.ready, 0)
+      step(10)
+      poke(dut.io.out.ready, 1)
+
+      while (cntValidOut < in.size) {
+        if (peek(dut.io.out.valid) && peek(dut.io.out.ready)) {
+          //expect(dut.io.out.bits.cut,  in(cntValidOut))
+          dut.params.protoIn match {
+            case dspR: DspReal => {
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            }
+            case _ =>  {
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            }
+          }
+          if (expPeaks.contains(peek(dut.io.fftBin))) {
+            expect(dut.io.out.bits.peak, 1)
+          }
+          threshold += peek(dut.io.out.bits.threshold)
+
+          if (cntValidOut == in.size - 1)
+            expect(dut.io.lastOut, 1)
+          cntValidOut += 1
+        }
+        step(1)
+     }
+
+     cntValidOut = 0
+     step(dut.params.leadLaggWindowSize * 2)
+    }
+  }
+  if (thrPlot) {
+    val f = Figure()
+    val p = f.subplot(0)
+    p.legend_=(true)
+    val xaxis = (0 until dut.params.fftSize).map(e => e.toDouble).toSeq.toArray
+    p.xlabel = "Frequency bin"
+    p.ylabel = "Amplitude"
+
+    val fftPlot = in.toSeq
+    val thresholdPlot = threshold.toSeq
+
+    p += plot(xaxis, fftPlot.toArray, name = "Signal")
+    p += plot(xaxis, thresholdPlot.toArray, name = "CFAR threshold")
+    p.title_=(s"Constant False Alarm Rate")
+
+    f.saveas(s"test_run_dir/CFARThresholdPlot.pdf")
+  }
+}
+
+class CFARGOSCATester[T <: Data](dut: CFARCore[T],
+                                      in: Seq[Double],
+                                      thrFactor: Double,
+                                      cfarMode: String,
+                                      cfarAlgorithm: String,
+                                      thrPlot: Boolean,
+                                      indexLagg: Int,
+                                      indexLead: Int,
+                                      considerEdges: Boolean,
+                                      runTime: Boolean,
+                                      tol: Int) extends DspTester(dut) {
+
+  require(dut.params.leadLaggWindowSize > 3 && dut.params.guardWindowSize > 1)
+  require(dut.params.CFARAlgorithm == GOSCACFARType || dut.params.CFARAlgorithm == GOSCFARType)
+  require(dut.params.sendCut == true)
+  
+  var cntValidOut = 0
+  var threshold: ArrayBuffer[Double] = mutable.ArrayBuffer[Double]()
+  
+  poke(dut.io.in.valid, 0)
+  poke(dut.io.out.ready, 0)
+  // initilize control registers
+  poke(dut.io.fftWin, dut.params.fftSize)
+  poke(dut.io.thresholdScaler, thrFactor)
+  poke(dut.io.peakGrouping, 0)
+  
+  val cfarModeNum = cfarMode match {
+                      case "Cell Averaging" => 0
+                      case "Greatest Of" => 1
+                      case "Smallest Of" => 2
+                      case _ => 0
+                    }
+  
+  poke(dut.io.cfarMode, cfarModeNum)
+  poke(dut.io.logOrLinearMode, 1)
+  
+  val startLwin: Int = if (runTime) 4 else dut.params.leadLaggWindowSize
+  val startGwin: Int = if (runTime) 2 else dut.params.guardWindowSize
+  
+  for (lWinSize <- startLwin to dut.params.leadLaggWindowSize) {
+    for (guardSize <- startGwin to dut.params.guardWindowSize) {
+      println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize")
+      
+      val (expThr, expPeaks) = if (cfarAlgorithm == "GOS")
+                                 CFARUtils.cfarGOS(in, referenceCells = lWinSize, guardCells = guardSize, indexLagg = indexLagg, indexLead = indexLead, cfarMode = cfarMode, scalingFactor = thrFactor, plotEn = true)
+                               else
+                                 CFARUtils.cfarCA(in, cfarMode = cfarMode, referenceCells = lWinSize, guardCells = guardSize, considerEdges = considerEdges, scalingFactor = thrFactor, plotEn = true)
+
+      poke(dut.io.guardCells, guardSize)
+      poke(dut.io.windowCells, lWinSize)
+
+      if (dut.params.CFARAlgorithm != GOSCFARType) {
+        poke(dut.io.divSum.get, log2Ceil(lWinSize))
+      }
+      
+      poke(dut.io.indexLead.get, indexLead)
+      poke(dut.io.indexLagg.get, indexLagg)
+     
+      step(2) // be sure that control registers are first initilized and then set ready and valid signals
+      poke(dut.io.out.ready, 1)
+      
+      for (i <- 0 until in.size) {
+        poke(dut.io.in.valid, 0)
+        val delay = 3//Random.nextInt(5)
+        step(delay)
+        poke(dut.io.in.valid, 1)
+        poke(dut.io.in.bits, in(i))
+        if (i == (in.size - 1))
+          poke(dut.io.lastIn, 1)
+        if (peek(dut.io.out.valid) == true) {
+          dut.params.protoIn match {
+            case dspR: DspReal => {
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get,  in(cntValidOut).toDouble) }
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            }
+            case _ =>  {
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            }
+          }
+          //fftBin
+          if (expPeaks.contains(peek(dut.io.fftBin))) {
+            expect(dut.io.out.bits.peak, 1)
+          }
+          cntValidOut += 1
+          threshold += peek(dut.io.out.bits.threshold)
+        }
+        step(1)
+      }
+      poke(dut.io.lastIn, 0)
+      poke(dut.io.in.valid, 0)
+      poke(dut.io.out.ready, 0)
+      step(10)
+      poke(dut.io.out.ready, 1)
+
+      while (cntValidOut < in.size) {
+        if (peek(dut.io.out.valid) && peek(dut.io.out.ready)) {
+          //expect(dut.io.out.bits.cut,  in(cntValidOut))
+          dut.params.protoIn match {
+            case dspR: DspReal => {
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            }
+            case _ =>  {
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            }
+          }
+          if (expPeaks.contains(peek(dut.io.fftBin))) {
+            expect(dut.io.out.bits.peak, 1)
+          }
+          threshold += peek(dut.io.out.bits.threshold)
+
+          if (cntValidOut == in.size - 1)
+            expect(dut.io.lastOut, 1)
+          cntValidOut += 1
+        }
+        step(1)
+     }
+
+     cntValidOut = 0
+     step(dut.params.leadLaggWindowSize * 2)
+    }
+  }
+  if (thrPlot) {
+    val f = Figure()
+    val p = f.subplot(0)
+    p.legend_=(true)
+    val xaxis = (0 until dut.params.fftSize).map(e => e.toDouble).toSeq.toArray
+    p.xlabel = "Frequency bin"
+    p.ylabel = "Amplitude"
+
+    val fftPlot = in.toSeq
+    val thresholdPlot = threshold.toSeq
+
+    p += plot(xaxis, fftPlot.toArray, name = "Signal")
+    p += plot(xaxis, thresholdPlot.toArray, name = "CFAR threshold")
+    p.title_=(s"Constant False Alarm Rate")
+
+    f.saveas(s"test_run_dir/CFARThresholdPlot.pdf")
+  }
+}
+
+
+
 class CFARThrPlotTester[T <: Data](dut: CFARCore[T],
                                    in: Seq[Double],
                                    thrFactor: Double,
                                    cfarMode: Int,
                                    expPeaks: Seq[Int],
+                                   //thrPlot: Boolean,
                                    expThr: Seq[Double], 
                                    tol: Int) extends DspTester(dut) {
   require(dut.params.leadLaggWindowSize > 3 && dut.params.guardWindowSize > 1)
@@ -84,11 +383,11 @@ class CFARThrPlotTester[T <: Data](dut: CFARCore[T],
         if (peek(dut.io.out.valid) == true) {
           dut.params.protoIn match {
             case dspR: DspReal => {
-              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut,  in(cntValidOut).toDouble) }
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get,  in(cntValidOut).toDouble) }
               realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold,  expThr(cntValidOut)) }
             }
             case _ =>  {
-              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut, in(cntValidOut)) }
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
               fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
             }
           }
@@ -112,11 +411,11 @@ class CFARThrPlotTester[T <: Data](dut: CFARCore[T],
           //expect(dut.io.out.bits.cut,  in(cntValidOut))
           dut.params.protoIn match {
             case dspR: DspReal => {
-              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut, in(cntValidOut)) }
+              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
               realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
             }
             case _ =>  {
-              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut, in(cntValidOut)) }
+              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
               fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
             }
           }
@@ -134,25 +433,25 @@ class CFARThrPlotTester[T <: Data](dut: CFARCore[T],
 
     cntValidOut = 0
     step(dut.params.leadLaggWindowSize * 2)
-    
-    val f = Figure()
-    val p = f.subplot(0)
-    p.legend_=(true)
-    val xaxis = (0 until dut.params.fftSize).map(e => e.toDouble).toSeq.toArray
-    p.xlabel = "Frequency bin"
-    p.ylabel = "Amplitude"
 
-    val fftPlot = in.toSeq
-    val thresholdPlot = threshold.toSeq
+  //  if (thrPlot) {
+      val f = Figure()
+      val p = f.subplot(0)
+      p.legend_=(true)
+      val xaxis = (0 until dut.params.fftSize).map(e => e.toDouble).toSeq.toArray
+      p.xlabel = "Frequency bin"
+      p.ylabel = "Amplitude"
 
-    p += plot(xaxis, fftPlot.toArray, name = "Signal")
-    p += plot(xaxis, thresholdPlot.toArray, name = "CFAR threshold")
-    p.title_=(s"Constant False Alarm Rate")
+      val fftPlot = in.toSeq
+      val thresholdPlot = threshold.toSeq
 
-    f.saveas(s"test_run_dir/CFARThresholdPlot.pdf")
+      p += plot(xaxis, fftPlot.toArray, name = "Signal")
+      p += plot(xaxis, thresholdPlot.toArray, name = "CFAR threshold")
+      p.title_=(s"Constant False Alarm Rate")
+
+      f.saveas(s"test_run_dir/CFARThresholdPlot.pdf")
+  //  }
 }
-
-
 
 // Simple tester, checks only data stream functionality
 class CFARStreamTester[T <: Data](dut: CFARCore[T], in: Seq[Double], tol: Int) extends DspTester(dut) {
@@ -199,10 +498,10 @@ class CFARStreamTester[T <: Data](dut: CFARCore[T], in: Seq[Double], tol: Int) e
         for (i<-0 to delay) {
           if (peek(dut.io.out.valid) == true) {
             dut.params.protoIn match {
-              case dspR: DspReal => realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut,  in(cntValidOut).toDouble) }
-              case _ =>  fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut, in(cntValidOut)) }
+              case dspR: DspReal => realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get,  in(cntValidOut).toDouble) }
+              case _ =>  fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
             }
-            println(peek(dut.io.out.bits.cut).toString)
+            println(peek(dut.io.out.bits.cut.get).toString)
             cntValidOut += 1
           }
           step(1)
@@ -224,8 +523,8 @@ class CFARStreamTester[T <: Data](dut: CFARCore[T], in: Seq[Double], tol: Int) e
         if (peek(dut.io.out.valid)) {
           //expect(dut.io.out.bits.cut,  in(cntValidOut))
           dut.params.protoIn match {
-            case dspR: DspReal => realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut,  in(cntValidOut)) }
-            case _ =>  fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut, in(cntValidOut)) }
+            case dspR: DspReal => realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get,  in(cntValidOut)) }
+            case _ =>  fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
           }
           if (cntValidOut == in.size - 1)
             expect(dut.io.lastOut, 1)
@@ -245,10 +544,11 @@ object CFARTester {
                                                     cfarMode: String = "Smallest Of",
                                                     thrFactor: Double = 3.5,
                                                     tol: Int = 3,
+                                                    random: Boolean = false,
                                                     thrPlot: Boolean = false,
                                                     backend: String = "verilator"): Boolean = {
     require(params.fftSize > 8)
-    if (thrPlot == true) {
+    if (random == false) {
       val numSamples = params.fftSize
       Random.setSeed(11110L) // make same random data vector for every test case
       val noise = (0 until numSamples).map(i => Complex(math.sqrt(Random.nextDouble + Random.nextDouble),0))

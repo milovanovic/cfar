@@ -26,7 +26,7 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
     // control registers
     val thresholdScalerWidth = params.protoScaler.getWidth
     val divSumWidth = log2Ceil(log2Ceil(params.leadLaggWindowSize + 1))
-    val fftWin = RegInit(0.U(log2Ceil(params.fftSize + 1).W)) //!!!!!
+    val fftWin = RegInit(0.U(log2Ceil(params.fftSize + 1).W))
     val thresholdScaler = RegInit(0.U(thresholdScalerWidth.W))
     val logOrLinearMode = RegInit(false.B)
     val divSum = RegInit(0.U(divSumWidth.W))
@@ -39,6 +39,8 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
     // default take middle value
     val indexLead = RegInit((params.leadLaggWindowSize/2).U(log2Ceil(params.leadLaggWindowSize + 1).W))
     val indexLagg = RegInit((params.leadLaggWindowSize/2).U(log2Ceil(params.leadLaggWindowSize + 1).W))
+    // sub window size - used only for CASH algorithm
+    val subWindowSize = RegInit(params.leadLaggWindowSize.U(log2Ceil(params.leadLaggWindowSize + 1).W))
     //val detectedPeaksList = RegInit(0.U(params.fftSize.W)) // it will use a lot of registers
     val detectedPeaksListTmp = RegInit(VecInit(Seq.fill(params.fftSize)(false.B)))
     
@@ -53,7 +55,10 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
     if (params.CFARAlgorithm != GOSCFARType) {
       cfar.io.divSum.get := divSum
     }
-    
+    if (params.includeCASH == true) {
+      cfar.io.subCells.get := subWindowSize
+    }
+
     cfar.io.peakGrouping := peakGrouping
     if (params.CFARAlgorithm == GOSCACFARType) {
       cfar.io.cfarAlgorithm.get := cfarAlgorithm
@@ -117,6 +122,9 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
         RegFieldDesc(name = "indexLagg", desc = "Defines index of the sorted cells inside lagging window used for the threshold calculation")),
       RegField(log2Ceil(params.leadLaggWindowSize + 1), indexLead,
         RegFieldDesc(name = "indexLead", desc = "Defines index of the sorted cells inside leading window used for the threshold calculation")),
+      RegField(log2Ceil(params.leadLaggWindowSize + 1) , subWindowSize,
+        RegFieldDesc(name = "subWindowSize", desc = "Defines sub-window size used in CASH algorithm"))
+      
 //      RegField.r(params.fftSize/32, detectedPeaksListTmp.asUInt,
 //         RegFieldDesc(name = "detectedPeaksList", desc = "Detected peaks list"))
      )
