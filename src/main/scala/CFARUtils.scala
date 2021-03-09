@@ -53,7 +53,7 @@ object CFARUtils {
 //         }
         maximums = maximums :+ Seq(subLeadAvg, subLaggAvg).max
       }
-      println(maximums.min)
+     // println(maximums.min)
       val scaledThr = if (logMode)  maximums.min + scalingFactor else  maximums.min * scalingFactor
       maximums = Seq()
       threshold = threshold :+ scaledThr
@@ -206,20 +206,20 @@ object CFARUtils {
       var thr: Double = 0.0
       // take into account only one reference window for the edge cells
       for (ix <- 0 until totalCells) {
-        val lead = if (ix < windowCells) None else Some(signal.slice(ix - windowCells, ix - guardCells).sorted)
-        val lagg = if (ix >= (totalCells - windowCells)) None else Some(signal.slice(ix + guardCells + 1, ix + windowCells + 1).sorted)
+        val lead = if (ix < windowCells) None else Some(signal.slice(ix - windowCells, ix - guardCells).sorted(Ordering.Double.reverse))
+        val lagg = if (ix >= (totalCells - windowCells)) None else Some(signal.slice(ix + guardCells + 1, ix + windowCells + 1).sorted(Ordering.Double.reverse))
 
         if (ix < windowCells) {
-          thr = lagg.get(indexLagg)
+          thr = lagg.get(indexLagg - 1)
         }
         else if (ix >= (totalCells - windowCells)) {
-          thr = lead.get(indexLead)
+          thr = lead.get(indexLead - 1)
         }
         else {
           thr = cfarMode match {
-                  case "Cell Averaging" => (lead.get(indexLead) + lagg.get(indexLagg))/2
-                  case "Smallest Of" => Seq(lead.get(indexLead), lagg.get(indexLagg)).min
-                  case "Greatest Of" => Seq(lead.get(indexLead), lagg.get(indexLagg)).max
+                  case "Cell Averaging" => (lead.get(indexLead - 1) + lagg.get(indexLagg - 1))/2
+                  case "Smallest Of" => Seq(lead.get(indexLead - 1), lagg.get(indexLagg - 1)).min
+                  case "Greatest Of" => Seq(lead.get(indexLead - 1), lagg.get(indexLagg - 1)).max
                   case _ =>  throw new Exception(s"Unknown CFAR type, try with Cell Averaging, Smallest Of or Greatest Of")
                 }
         }
@@ -232,12 +232,12 @@ object CFARUtils {
     }
     else {
       for (ix <- windowCells until (totalCells - windowCells)) {
-        val lead = signal.slice(ix - windowCells, ix - guardCells).sorted
-        val lagg = signal.slice(ix + guardCells + 1, ix + windowCells + 1).sorted
+        val lead = signal.slice(ix - windowCells, ix - guardCells).sorted(Ordering.Double.reverse)
+        val lagg = signal.slice(ix + guardCells + 1, ix + windowCells + 1).sorted(Ordering.Double.reverse)
         val thr = cfarMode match {
-                    case "Cell Averaging" => (lead(indexLead) + lagg(indexLagg))/2
-                    case "Smallest Of" => Seq(lead(indexLead), lagg(indexLagg)).min
-                    case "Greatest Of" => Seq(lead(indexLead), lagg(indexLagg)).max
+                    case "Cell Averaging" => (lead(indexLead - 1) + lagg(indexLagg - 1))/2
+                    case "Smallest Of" => Seq(lead(indexLead - 1), lagg(indexLagg - 1)).min
+                    case "Greatest Of" => Seq(lead(indexLead - 1), lagg(indexLagg - 1)).max
                     case _ =>  throw new Exception(s"Unknown CFAR type, try with Cell Averaging, Smallest Of or Greatest Of")
                   }
         val scaledThr = if (logMode) thr + scalingFactor else thr * scalingFactor
@@ -317,7 +317,7 @@ object AdjustableShiftRegister {
 
 // this module should instatiate AdjustableShiftRegister and wrap it with AXI Stream interface
 // it is assumed that signal lastIn triggers flushing
-class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, val parallelOut: Boolean = false) extends Module { //Stream
+class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, val parallelOut: Boolean = false, val sendCnt: Boolean = false) extends Module { //Stream
   require(maxDepth > 1, s"Depth must be > 1, got $maxDepth")
   requireIsChiselType(proto)
 
@@ -325,11 +325,12 @@ class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, 
     val depth       = Input(UInt(log2Ceil(maxDepth + 1).W))
     val in          = Flipped(Decoupled(proto.cloneType))
     val lastIn      = Input(Bool())
-    
+
     val out         = Decoupled(proto.cloneType)
     val lastOut     = Output(Bool())
     val parallelOut = Output(Vec(maxDepth, proto))
-    
+    val cnt         = if (sendCnt) Some(Output(UInt(log2Ceil(maxDepth + 1).W))) else None
+
     val regFull     = Output(Bool())
     val regEmpty    = Output(Bool())
   })
@@ -384,6 +385,8 @@ class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, 
   io.parallelOut := adjShiftRegOut // parallel output is not important
   io.lastOut     := Mux(io.depth === 0.U, io.lastIn && io.in.fire(), lastOut)
   io.out.valid   := Mux(io.depth === 0.U, io.in.valid, initialInDone && io.in.valid || (last && en))
+  if (sendCnt)
+    io.cnt.get := cntIn
 }
 
 // simple RegEnable wrapped with AXI Stream interface
@@ -482,14 +485,14 @@ class ShiftRegisterMemStream[T <: Data](val proto: T, val maxDepth: Int) extends
     last := true.B
   }
   val lastOut = AdjustableShiftRegister(fireLastIn, maxDepth, io.depth, resetData = false.B, en = io.out.fire())
-  
-  when (lastOut && io.out.fire()) {
+  val resetAll = lastOut && io.out.fire()
+  when (resetAll) {
     initialInDone := false.B
     last := false.B
     writeIdxReg := 0.U
   }
   
-  when (en) {
+  when (en && ~resetAll) {
     mem.write(writeIdxReg, io.in.bits)
     writeIdxReg := Mux(writeIdxReg < (maxDepth - 1).U, writeIdxReg + 1.U, 0.U)
   }

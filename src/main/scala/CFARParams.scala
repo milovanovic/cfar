@@ -36,7 +36,6 @@ case class CFARParams[T <: Data: Real](
   numMulPipes           : Int = 0                   // number of mull pipeline registers
   ) {
   // requireIsPow2?
-  
   require(isPow2(leadLaggWindowSize) & isPow2(fftSize))
   require(leadLaggWindowSize > 0 & guardWindowSize > 0)
   require(leadLaggWindowSize  > guardWindowSize)

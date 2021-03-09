@@ -139,10 +139,12 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
   when (!(laggWindow.io.memFull) && laggWindow.io.out.fire()) {
     enableRightThr := true.B
   }
+  when (io.lastOut) {
+    enableRightThr := false.B
+  }
 
   dontTouch(enableRightThr)
   enableRightThr.suggestName("enableRightThr")
-
 
   val thrWithoutScaling = Mux(!leadWindow.io.memFull && !laggWindow.io.memFull,
                           0.U.asTypeOf(sumT),

@@ -34,20 +34,20 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   // val sumlagg = RegInit(t = sumT, init = 0.U.asTypeOf(sumT))
   // val sumlead = RegInit(t = sumT, init = 0.U.asTypeOf(sumT))
   
-  val laggWindow    =  Module(new AdjustableShiftRegisterStream(params.protoIn, params.leadLaggWindowSize))
+  val laggWindow    =  Module(new AdjustableShiftRegisterStream(params.protoIn, params.leadLaggWindowSize, sendCnt = true))
   laggWindow.io.in <> io.in
   laggWindow.io.depth := io.windowCells
   laggWindow.io.lastIn := io.lastIn
   val laggOutputVector = laggWindow.io.parallelOut
 
   val numSums = params.leadLaggWindowSize / params.minSubWindowSize.get
-  println("Number of sums is:")
-  println(numSums)
+  // println("Number of sums is:")
+  // println(numSums)
 
   val rstProto = Wire(params.protoIn.cloneType)
   rstProto := Real[T].fromDouble(0.0)
   // define vector of registers
-  println(CFARUtils.pow2Divisors(params.fftSize))
+  // println(CFARUtils.pow2Divisors(params.fftSize))
 
   val laggGuard     = Module(new AdjustableShiftRegisterStream(params.protoIn.cloneType, params.guardWindowSize))
   laggGuard.io.in <> laggWindow.io.out
@@ -65,7 +65,7 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   leadGuard.io.depth := io.guardCells
   leadGuard.io.lastIn := cellUnderTest.io.lastOut
 
-  val leadWindow = Module(new AdjustableShiftRegisterStream(params.protoIn, params.leadLaggWindowSize))
+  val leadWindow = Module(new AdjustableShiftRegisterStream(params.protoIn, params.leadLaggWindowSize, sendCnt = true))
   leadWindow.io.depth := io.windowCells
   leadWindow.io.in <> leadGuard.io.out
   leadWindow.io.out.ready := Mux(lastCut, true.B, io.out.ready)
@@ -78,7 +78,6 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val sumSubLeads = RegInit(VecInit(Seq.fill(numSums)(0.U.asTypeOf(sumT))))
   val activeSums = WireDefault(VecInit(Seq.fill(numSums)(true.B)))
 
-  
   (0 until numSums).map { numSumIndex => {
     val startIndex = numSumIndex * params.minSubWindowSize.get - 1
     val pow2Divisors = if (numSumIndex == 0) CFARUtils.pow2Divisors(params.leadLaggWindowSize).filter(_ >= params.minSubWindowSize.get) else CFARUtils.pow2Divisors(startIndex + 1).filter(_ >= params.minSubWindowSize.get)
@@ -88,7 +87,7 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
     //println()
 
     val endIndices = pow2Divisors.map(pow2Divisor => pow2Divisor + startIndex)
-    val endIndex =  if (numSumIndex == 0) io.subCells.get - 1.U else startIndex.U + io.subCells.get
+    val endIndex = if (numSumIndex == 0) io.subCells.get else startIndex.U + io.subCells.get //if (numSumIndex == 0) io.subCells.get - 1.U else startIndex.U + io.subCells.get
     dontTouch(endIndex)
     endIndex.suggestName("endIndex")
 
@@ -108,12 +107,21 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
 
     val minusOpLagg = MuxCase(rstProto, casesLagg)
     val minusOpLead = MuxCase(rstProto, casesLead)
-
-    val maybeFullLead = leadWindow.cntIn > (endIndex - 1.U)
-    val maybeFullLagg = laggWindow.cntIn > (endIndex - 1.U) // if (numSums == 0) laggWindow.cntIn > (endIndex - 1.U) else laggWindow.cntIn > endIndex
+    dontTouch(minusOpLagg)
+    minusOpLagg.suggestName("minusOperandLagg")
+    minusOpLead.suggestName("minusOperandLead")
+    
+    val maybeFullLead = leadWindow.io.cnt.get > (endIndex - 1.U)
+    val maybeFullLagg = laggWindow.io.cnt.get > (endIndex - 1.U) // if (numSums == 0) laggWindow.cntIn > (endIndex - 1.U) else laggWindow.cntIn > endIndex
+    
+    dontTouch(leadWindow.cntIn)
+    leadWindow.cntIn.suggestName("TestCounterValue")
     
     dontTouch(maybeFullLagg)
     maybeFullLagg.suggestName("maybeFullLagg")
+    dontTouch(maybeFullLead)
+    maybeFullLead.suggestName("maybeFullLead")
+    
     dontTouch(sumSubLaggs(numSumIndex))
     sumSubLaggs(numSumIndex).suggestName("sumSubLagg")
     
@@ -142,7 +150,8 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
     when (io.lastOut) {
       sumSubLeads(numSumIndex) := 0.U.asTypeOf(sumT)
     }
-    .elsewhen (leadWindow.io.in.fire()) {
+    .elsewhen (leadWindow.io.in.fire() && cellUnderTest.io.out.fire()) {
+    //.elsewhen (leadWindow.io.in.fire()) {
       when (leadWindow.io.regFull || maybeFullLead) {
         if (numSumIndex == 0) {
           sumSubLeads(numSumIndex) := sumSubLeads(numSumIndex) + leadWindow.io.in.bits - minusOpLead
@@ -266,6 +275,10 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   when (!(laggWindow.io.regFull) && laggWindow.io.out.fire()) {
     enableRightThr := true.B
   }
+  when (io.lastOut) {
+    enableRightThr := false.B
+  }
+  
   dontTouch(enableRightThr)
   enableRightThr.suggestName("enableRightThr")
 

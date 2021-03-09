@@ -31,116 +31,137 @@ class CFARGOSCATester[T <: Data](dut: CFARCore[T],
                                       runTime: Boolean,
                                       tol: Int) extends DspTester(dut) {
 
-  require(dut.params.leadLaggWindowSize > 3 && dut.params.guardWindowSize > 1)
-  require(dut.params.CFARAlgorithm == GOSCACFARType || dut.params.CFARAlgorithm == GOSCFARType)
-  require(dut.params.sendCut == true)
+  require(dut.params.leadLaggWindowSize > 3 && dut.params.guardWindowSize > 1, "Check configuration of leading/lagging cells and guard cells")
+  require(dut.params.CFARAlgorithm == GOSCACFARType || dut.params.CFARAlgorithm == GOSCFARType, "Not appropriate CFAR type")
+  require(dut.params.sendCut == true, "Output port for cell under test should be enabled")
   
   var cntValidOut = 0
   var threshold: ArrayBuffer[Double] = mutable.ArrayBuffer[Double]()
+  var indexLeadTmp: Int = dut.params.leadLaggWindowSize/2
+  var indexLaggTmp: Int = dut.params.leadLaggWindowSize/2
   
-  poke(dut.io.in.valid, 0)
-  poke(dut.io.out.ready, 0)
-  // initilize control registers
-  poke(dut.io.fftWin, dut.params.fftSize)
-  poke(dut.io.thresholdScaler, thrFactor)
-  poke(dut.io.peakGrouping, 0)
-  
-  val cfarModeNum = cfarMode match {
-                      case "Cell Averaging" => 0
-                      case "Greatest Of" => 1
-                      case "Smallest Of" => 2
-                      case _ => 0
-                    }
-  
-  poke(dut.io.cfarMode, cfarModeNum)
-  poke(dut.io.logOrLinearMode, 1)
-  
-  val startLwin: Int = if (runTime) 4 else dut.params.leadLaggWindowSize
-  val startGwin: Int = if (runTime) 2 else dut.params.guardWindowSize
-  
-  for (lWinSize <- startLwin to dut.params.leadLaggWindowSize) {
-    for (guardSize <- startGwin to dut.params.guardWindowSize) {
-      println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize")
-      
-      val (expThr, expPeaks) = if (cfarAlgorithm == "GOS")
-                                 CFARUtils.cfarGOS(in, referenceCells = lWinSize, guardCells = guardSize, indexLagg = indexLagg, indexLead = indexLead, cfarMode = cfarMode, scalingFactor = thrFactor, plotEn = thrPlot)
-                               else
-                                 CFARUtils.cfarCA(in, cfarMode = cfarMode, referenceCells = lWinSize, guardCells = guardSize, considerEdges = considerEdges, scalingFactor = thrFactor, plotEn = thrPlot)
+  updatableDspVerbose.withValue(false) {
+    poke(dut.io.in.valid, 0)
+    poke(dut.io.out.ready, 0)
+    // initilize control registers
+    poke(dut.io.fftWin, dut.params.fftSize)
+    poke(dut.io.thresholdScaler, thrFactor)
+    poke(dut.io.peakGrouping, 0)
+    
+    val cfarModeNum = cfarMode match {
+                        case "Cell Averaging" => 0
+                        case "Greatest Of" => 1
+                        case "Smallest Of" => 2
+                        case _ => 0
+                      }
+    val cfarAlgorithmTmp = cfarAlgorithm match {
+                         case "CA" => 0
+                         case "GOS" => 1
+                        }
+    
+    poke(dut.io.cfarMode, cfarModeNum)
+    poke(dut.io.logOrLinearMode, 1)
+    
+    var lWinSizes: Seq[Int] = Seq()
+    if (runTime)
+      lWinSizes = CFARUtils.pow2Divisors(dut.params.leadLaggWindowSize).filter(_ > 2).toSeq
+    else
+      lWinSizes = Seq(dut.params.leadLaggWindowSize)
+    val startGwin: Int = if (runTime) 2 else dut.params.guardWindowSize
+    // val startLwin: Int = if (runTime) 4 else dut.params.leadLaggWindowSize
+    
+    //for (lWinSize <- startLwin to dut.params.leadLaggWindowSize) {
+    for (lWinSize <- lWinSizes) {
+      for (guardSize <- startGwin to dut.params.guardWindowSize) {
+        println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize")
+        
+        indexLeadTmp = if (indexLead > lWinSize) lWinSize else indexLead
+        indexLaggTmp = if (indexLagg > lWinSize) lWinSize else indexLagg
+        
+        val (expThr, expPeaks) = if (cfarAlgorithm == "GOS")
+                                  CFARUtils.cfarGOS(in, referenceCells = lWinSize, guardCells = guardSize, indexLagg = indexLaggTmp, indexLead = indexLeadTmp, cfarMode = cfarMode, considerEdges = considerEdges, scalingFactor = thrFactor, plotEn = thrPlot)
+                                else
+                                  CFARUtils.cfarCA(in, cfarMode = cfarMode, referenceCells = lWinSize, guardCells = guardSize, considerEdges = considerEdges, scalingFactor = thrFactor, plotEn = thrPlot)
 
-      poke(dut.io.guardCells, guardSize)
-      poke(dut.io.windowCells, lWinSize)
+        poke(dut.io.guardCells, guardSize)
+        poke(dut.io.windowCells, lWinSize)
 
-      if (dut.params.CFARAlgorithm != GOSCFARType) {
-        poke(dut.io.divSum.get, log2Ceil(lWinSize))
-      }
+        if (dut.params.CFARAlgorithm != GOSCFARType) {
+          poke(dut.io.divSum.get, log2Ceil(lWinSize))
+        }
+
+        if (dut.params.CFARAlgorithm == GOSCACFARType) {
+          poke(dut.io.cfarAlgorithm.get, cfarAlgorithmTmp)
+        }
+
+        poke(dut.io.indexLead.get, indexLeadTmp)
+        poke(dut.io.indexLagg.get, indexLaggTmp)
       
-      poke(dut.io.indexLead.get, indexLead)
-      poke(dut.io.indexLagg.get, indexLagg)
-     
-      step(2) // be sure that control registers are first initilized and then set ready and valid signals
-      poke(dut.io.out.ready, 1)
-      
-      for (i <- 0 until in.size) {
+        step(2) // be sure that control registers are first initilized and then set ready and valid signals
+        poke(dut.io.out.ready, 1)
+        
+        for (i <- 0 until in.size) {
+          poke(dut.io.in.valid, 0)
+          val delay = 3//Random.nextInt(5)
+          step(delay)
+          poke(dut.io.in.valid, 1)
+          poke(dut.io.in.bits, in(i))
+          if (i == (in.size - 1))
+            poke(dut.io.lastIn, 1)
+          if (peek(dut.io.out.valid) == true) {
+            dut.params.protoIn match {
+              case dspR: DspReal => {
+                realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get,  in(cntValidOut).toDouble) }
+                realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+              }
+              case _ =>  {
+                fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
+                fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+              }
+            }
+            //fftBin
+            if (expPeaks.contains(peek(dut.io.fftBin))) {
+              expect(dut.io.out.bits.peak, 1)
+            }
+            cntValidOut += 1
+            threshold += peek(dut.io.out.bits.threshold)
+          }
+          step(1)
+        }
+        poke(dut.io.lastIn, 0)
         poke(dut.io.in.valid, 0)
-        val delay = 3//Random.nextInt(5)
-        step(delay)
-        poke(dut.io.in.valid, 1)
-        poke(dut.io.in.bits, in(i))
-        if (i == (in.size - 1))
-          poke(dut.io.lastIn, 1)
-        if (peek(dut.io.out.valid) == true) {
-          dut.params.protoIn match {
-            case dspR: DspReal => {
-              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get,  in(cntValidOut).toDouble) }
-              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+        poke(dut.io.out.ready, 0)
+        step(10)
+        poke(dut.io.out.ready, 1)
+
+        while (cntValidOut < in.size) {
+          if (peek(dut.io.out.valid) && peek(dut.io.out.ready)) {
+            //expect(dut.io.out.bits.cut,  in(cntValidOut))
+            dut.params.protoIn match {
+              case dspR: DspReal => {
+                realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
+                realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+              }
+              case _ =>  {
+                fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
+                fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+              }
             }
-            case _ =>  {
-              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
-              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            if (expPeaks.contains(peek(dut.io.fftBin))) {
+              expect(dut.io.out.bits.peak, 1)
             }
+            threshold += peek(dut.io.out.bits.threshold)
+
+            if (cntValidOut == in.size - 1)
+              expect(dut.io.lastOut, 1)
+            cntValidOut += 1
           }
-          //fftBin
-          if (expPeaks.contains(peek(dut.io.fftBin))) {
-            expect(dut.io.out.bits.peak, 1)
-          }
-          cntValidOut += 1
-          threshold += peek(dut.io.out.bits.threshold)
-        }
-        step(1)
+          step(1)
       }
-      poke(dut.io.lastIn, 0)
-      poke(dut.io.in.valid, 0)
-      poke(dut.io.out.ready, 0)
-      step(10)
-      poke(dut.io.out.ready, 1)
 
-      while (cntValidOut < in.size) {
-        if (peek(dut.io.out.valid) && peek(dut.io.out.ready)) {
-          //expect(dut.io.out.bits.cut,  in(cntValidOut))
-          dut.params.protoIn match {
-            case dspR: DspReal => {
-              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
-              realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
-            }
-            case _ =>  {
-              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
-              fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
-            }
-          }
-          if (expPeaks.contains(peek(dut.io.fftBin))) {
-            expect(dut.io.out.bits.peak, 1)
-          }
-          threshold += peek(dut.io.out.bits.threshold)
-
-          if (cntValidOut == in.size - 1)
-            expect(dut.io.lastOut, 1)
-          cntValidOut += 1
-        }
-        step(1)
-     }
-
-     cntValidOut = 0
-     step(dut.params.leadLaggWindowSize * 2)
+      cntValidOut = 0
+      step(dut.params.leadLaggWindowSize * 2)
+      }
     }
   }
   if (thrPlot) {
@@ -158,14 +179,14 @@ class CFARGOSCATester[T <: Data](dut: CFARCore[T],
     p += plot(xaxis, thresholdPlot.toArray, name = "CFAR threshold")
     p.title_=(s"Constant False Alarm Rate")
 
-    f.saveas(s"test_run_dir/CFARThresholdPlot.pdf")
+    f.saveas(s"test_run_dir/CFARThresholdGOSCAPlot.pdf")
   }
 }
 
 object CFARGOSCATester {
   def apply[T <: Data : Real: BinaryRepresentation](params: CFARParams[T],
                                                     cfarMode: String = "Smallest Of",
-                                                    cfarAlgorithm: String,
+                                                    cfarAlgorithm: String = "GOS",
                                                     thrFactor: Double = 3.5,
                                                     considerEdges: Boolean = false,
                                                     indexLagg: Int = 4,
@@ -176,8 +197,9 @@ object CFARGOSCATester {
                                                     backend: String = "verilator",
                                                     tol: Int = 3): Boolean = {
     require(params.fftSize > 8)
-    require(indexLagg >= params.leadLaggWindowSize)
-    require(indexLead >= params.leadLaggWindowSize)
+    require(indexLagg <= params.leadLaggWindowSize)
+    require(indexLead <= params.leadLaggWindowSize)
+    require(cfarAlgorithm == "GOS" | cfarAlgorithm == "CA")
     
     var testSignal: Seq[Double] = Seq()
     
@@ -207,10 +229,9 @@ object CFARGOSCATester {
       }
       testSignal = testSignaltmp
     }
-    val considerEdgesCASH = if (params.includeCASH == true) false else considerEdges
-    
+
     chisel3.iotesters.Driver.execute(Array("-tbn", backend),
-      () => new CFARCore(params)) { c => new CFARGOSCATester(c, testSignal,  thrFactor = thrFactor, cfarMode = cfarMode, cfarAlgorithm = cfarAlgorithm,  thrPlot = thrPlot, indexLagg = indexLagg, indexLead = indexLead, considerEdges = considerEdgesCASH, runTime = runTime, tol = tol)
+      () => new CFARCore(params)) { c => new CFARGOSCATester(c, testSignal,  thrFactor = thrFactor, cfarMode = cfarMode, cfarAlgorithm = cfarAlgorithm,  thrPlot = thrPlot, indexLagg = indexLagg, indexLead = indexLead, considerEdges = considerEdges, runTime = runTime, tol = tol)
     }
   }
 }

@@ -134,12 +134,12 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   }
   
   val leftThr  = Mux(io.cfarAlgorithm.getOrElse(1.U) === 1.U,
-                   laggSortedData(io.indexLagg.get),
+                   laggSortedData(io.indexLagg.get - 1.U),
                    BinaryRepresentation[T].shr(sumlagg, io.divSum.get))
 
   // if cfarAlgorithm input is not available then this CFAR is GOSCFARType
   val rightThr = Mux(io.cfarAlgorithm.getOrElse(1.U) === 1.U,
-                   leadSortedData(io.indexLead.get),
+                   leadSortedData(io.indexLead.get - 1.U),
                    BinaryRepresentation[T].shr(sumlead, io.divSum.get)) // this will make a lot of Muxes
 
   val greatestOf = Mux(leftThr > rightThr, leftThr, rightThr)
@@ -171,16 +171,23 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
 //   println(bpos.toString) // it uses binaryPoint growth
   val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, thresholdPip, en = true.B) //en = cellUnderTest.io.out.fire() || (flushing && io.out.ready))
   
-  val leftNeighb  = ShiftRegister(laggGuard.io.parallelOut(io.guardCells - 1), thresholdPip, en = true.B)
-  val rightNeighb = ShiftRegister(leadGuard.io.parallelOut(0), thresholdPip, en = true.B)
-  val isLeftPeak  = leftNeighb  > threshold //consider here pipes!
-  val isRightPeak = rightNeighb > threshold
-  val isPeak      = cutDelayed  > threshold
+  // TODO: Change peakgrouping logic!
+  
+  val leftNeighb  = ShiftRegister(Mux(io.guardCells === 0.U, laggWindow.io.sortedData.last, laggGuard.io.parallelOut.last), thresholdPip, en = true.B)
+  val rightNeighb = ShiftRegister(Mux(io.guardCells === 0.U, leadWindow.io.sortedData.head, leadGuard.io.parallelOut.head), thresholdPip, en = true.B)
+  val isLocalMax = cutDelayed > leftNeighb && cutDelayed > rightNeighb
+  val isPeak = cutDelayed  > threshold
+  
+  // val leftNeighb  = ShiftRegister(laggGuard.io.parallelOut(io.guardCells - 1), thresholdPip, en = true.B)
+  // val rightNeighb = ShiftRegister(leadGuard.io.parallelOut(0), thresholdPip, en = true.B)
+  // val isLeftPeak  = leftNeighb  > threshold //consider here pipes!
+  // val isRightPeak = rightNeighb > threshold
+  // val isPeak      = cutDelayed  > threshold
   // no pipes
   io.in.ready := ~initialInDone || io.out.ready && ~flushing
   if (params.numAddPipes == 0 && params.numMulPipes == 0) {
     //io.out.bits.peak := cutDelayed > threshold
-    io.out.bits.peak := Mux(io.peakGrouping, isPeak && ~isLeftPeak && ~isRightPeak, isPeak)
+    io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
     if (params.sendCut)
       io.out.bits.cut.get := cutDelayed
     io.out.bits.threshold :=  threshold
@@ -191,7 +198,7 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   else {
     val outQueue = Module(new Queue(chiselTypeOf(io.out.bits), entries = thresholdPip, pipe = false, flow = true))
     //outQueue.io.enq.bits.peak := cutDelayed > threshold
-    outQueue.io.enq.bits.peak := Mux(io.peakGrouping, isPeak && ~isLeftPeak && ~isRightPeak, isPeak) 
+    outQueue.io.enq.bits.peak :=  Mux(io.peakGrouping, isPeak && isLocalMax, isPeak) //Mux(io.peakGrouping, isPeak && ~isLeftPeak && ~isRightPeak, isPeak) 
     if (params.sendCut) {
       outQueue.io.enq.bits.cut.get := cutDelayed
     }
