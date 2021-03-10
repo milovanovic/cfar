@@ -201,7 +201,7 @@ object CFARUtils {
     val windowCells = referenceCells + guardCells
     var threshold : Seq[Double] = Seq()
     var peakIndices: Seq[Int] = Seq()
-    
+    // This should be checked!
     if (considerEdges) {
       var thr: Double = 0.0
       // take into account only one reference window for the edge cells
@@ -224,13 +224,13 @@ object CFARUtils {
                 }
         }
         val scaledThr = if (logMode) thr + scalingFactor else thr * scalingFactor
+
         threshold = threshold :+ scaledThr
-        // println("Threshold is")
-        // println(thr)
         if (scaledThr < signal(ix)) peakIndices :+ ix
       }
     }
     else {
+      // this is ok!
       for (ix <- windowCells until (totalCells - windowCells)) {
         val lead = signal.slice(ix - windowCells, ix - guardCells).sorted(Ordering.Double.reverse)
         val lagg = signal.slice(ix + guardCells + 1, ix + windowCells + 1).sorted(Ordering.Double.reverse)
@@ -240,6 +240,8 @@ object CFARUtils {
                     case "Greatest Of" => Seq(lead(indexLead - 1), lagg(indexLagg - 1)).max
                     case _ =>  throw new Exception(s"Unknown CFAR type, try with Cell Averaging, Smallest Of or Greatest Of")
                   }
+        // println("Current threshold is:")
+        // println(thr)
         val scaledThr = if (logMode) thr + scalingFactor else thr * scalingFactor
         if (scaledThr < signal(ix)) peakIndices = peakIndices :+ ix
         threshold = threshold :+ scaledThr
@@ -380,7 +382,7 @@ class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, 
   io.regFull   := initialInDone && ~last
   //io.in.ready    := ~initialInDone || io.out.ready && ~last // or without ~last
   io.in.ready    := Mux(io.depth === 0.U, io.out.ready, ~initialInDone || io.out.ready && ~last)
-  
+  dontTouch(io.parallelOut)
   io.out.bits    := Mux(io.depth === 0.U, io.in.bits, adjShiftReg)
   io.parallelOut := adjShiftRegOut // parallel output is not important
   io.lastOut     := Mux(io.depth === 0.U, io.lastIn && io.in.fire(), lastOut)

@@ -149,13 +149,28 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
     1.U -> greatestOf,
     2.U -> smallestOf))
 
-  val thrWithoutScaling = Mux(!leadWindow.io.sorterFull.get && !laggWindow.io.sorterFull.get,
+  // when considerEdges = true
+  /* val thrWithoutScaling = Mux(!leadWindow.io.sorterFull.get && !laggWindow.io.sorterFull.get,
                             0.U.asTypeOf(sumT),
                             Mux(laggWindow.io.sorterFull.get && !leadWindow.io.sorterFull.get,
                               leftThr,
                               Mux(!laggWindow.io.sorterFull.get && leadWindow.io.sorterFull.get,
                                 rightThr,
-                                thrByModes)))
+                                thrByModes)))*/
+  // when considerEdges = false
+  val enableRightThr = RegInit(false.B)
+  when (!(laggWindow.io.sorterFull.get) && laggWindow.io.out.fire()) {
+    enableRightThr := true.B
+  }
+  when (io.lastOut) {
+    enableRightThr := false.B
+  }
+  
+  dontTouch(enableRightThr)
+  enableRightThr.suggestName("enableRightThr")
+
+  val thrWithoutScaling = Mux(laggWindow.io.sorterFull.get && leadWindow.io.sorterFull.get,
+                               thrByModes, Mux(enableRightThr || !leadWindow.io.sorterFull.get, 0.U.asTypeOf(sumT), thrByModes))
   
   val threshold = DspContext.alter(DspContext.current.copy(
     numAddPipes = thresholdPip,

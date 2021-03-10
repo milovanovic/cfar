@@ -11,7 +11,7 @@ import org.scalatest.{FlatSpec, Matchers}
 
 class CFARFinalSpec extends FlatSpec with Matchers {
 
-  val fftSize = 64
+  val fftSize = 512
   val thrPlot = false
   val considerEdges = true
   val thrFactor = 3.5
@@ -22,13 +22,13 @@ class CFARFinalSpec extends FlatSpec with Matchers {
   // for (considerEdges <- Seq(false, true)) {
   
   // Test module CFARCoreWithASR and FixedPoint data type
-  for (cfarMode <- Seq("CASH", "Greatest Of", "Smallest Of", "Cell Averaging")) {
-    for (refWindow <- Seq(16, 32, 64, 128)) {
-      for (guardWindow <- Seq(2)) {//, 4, 8)) {
-        for (backend <- Seq("verilator", "treadle")) {
+  for (cfarMode <- Seq("CASH", "Greatest Of", "Smallest Of", "Cell Averaging")) { //, "Greatest Of", "Smallest Of", "Cell Averaging")) { // add here "CASH"
+    for (refWindow <- Seq(16, 32)) { // 32, 64, 128
+      for (guardWindow <- Seq(2)) { //, 4, 8)) {
+        for (backend <- Seq("verilator")) {//, "treadle")) {
           if (cfarMode == "CASH") {
-            for (subWindowSize <- CFARUtils.pow2Divisors(refWindow).tail.toSeq) {
-              //println(subWindowSize.toString)
+            for (subWindowSize <- CFARUtils.pow2Divisors(refWindow).tail.toSeq) { //) { 
+              println(subWindowSize.toString)
               val paramsFixedASR: CFARParams[FixedPoint] = CFARParams(
                 protoIn = FixedPoint(16.W, 6.BP),
                 protoThreshold = FixedPoint(16.W, 6.BP),
@@ -40,12 +40,12 @@ class CFARFinalSpec extends FlatSpec with Matchers {
                 includeCASH = true,
                 CFARAlgorithm = CACFARType
               )
-              it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and subWindowSize = $subWindowSize " ignore {
+              it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and subWindowSize = $subWindowSize " in {
                 CFARCATester(paramsFixedASR,
                             cfarMode = cfarMode,
                             thrFactor = thrFactor,
                             considerEdges = false,
-                            runTime = false,
+                            runTime = true,
                             random = random,
                             backend = backend,
                             tol = 3) should be (true)
@@ -64,7 +64,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
               includeCASH = true,
               CFARAlgorithm = CACFARType
             )
-            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" ignore {
+            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" in {
             CFARCATester(paramsFixedASR,
                         cfarMode = cfarMode,
                         thrFactor = thrFactor,
@@ -111,11 +111,11 @@ class CFARFinalSpec extends FlatSpec with Matchers {
   }
 
   // Test generalized order statistic algorithms!
-  for (cfarAlgorithm <- Seq("GOS")) { //"CA", 
-    for (cfarMode <- Seq("Smallest Of")) { //, "Greatest Of", "Smallest Of")) {
-      for (refWindow <- Seq(8)) { //, 32, 64, 128)) {
-        for (guardWindow <- Seq(2)) { //, 4, 8)) {
-          for (backend <- Seq("verilator")) {//, "treadle")) {
+  for (cfarAlgorithm <- Seq("GOS", "CA")) {
+    for (cfarMode <- Seq("Smallest Of", "Greatest Of", "Cell Averaging")) {
+      for (refWindow <- Seq(16, 32, 64, 128)) {
+        for (guardWindow <- Seq(2, 4, 8)) {
+          for (backend <- Seq("verilator", "treadle")) {
             val paramsFixedLis: CFARParams[FixedPoint] = CFARParams(
               protoIn = FixedPoint(16.W, 6.BP),
               protoThreshold = FixedPoint(16.W, 6.BP),
@@ -123,7 +123,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
               leadLaggWindowSize = refWindow,
               guardWindowSize = guardWindow,
               fftSize = fftSize,
-              minSubWindowSize = None, // test CACFAR with ShiftRegisterMem -> blockram/sram
+              minSubWindowSize = None,
               includeCASH = false,
               CFARAlgorithm = GOSCACFARType
             )
@@ -132,13 +132,49 @@ class CFARFinalSpec extends FlatSpec with Matchers {
                         cfarMode = cfarMode,
                         cfarAlgorithm = cfarAlgorithm,
                         thrFactor = thrFactor,
-                        considerEdges = true,
+                        considerEdges = false,
                         indexLagg = refWindow/2,
                         indexLead = refWindow/2,
-                        runTime = false,
+                        runTime = false, // taking too late to simulate if it is true
                         random = random,
                         backend = backend,
                         tol = 3) should be (true)
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Simple test for DspReal data type
+  for (cfarAlgorithm <- Seq("GOS", "CA")) {
+    for (cfarMode <- Seq("Smallest Of", "Greatest Of", "Cell Averaging")) {
+      for (refWindow <- Seq(16)) {
+        for (guardWindow <- Seq(2)) {
+          for (backend <- Seq("verilator", "treadle")) {
+            val paramsFixedLis: CFARParams[DspReal] = CFARParams(
+              protoIn = DspReal(),
+              protoThreshold = DspReal(),
+              protoScaler = DspReal(),
+              leadLaggWindowSize = refWindow,
+              guardWindowSize = guardWindow,
+              fftSize = fftSize,
+              minSubWindowSize = None, 
+              includeCASH = false,
+              CFARAlgorithm = GOSCACFARType
+            )
+            it should s"test GOSCA CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode , cfarAlgorithm = $cfarAlgorithm and backend = $backend and DspReal data type" ignore {
+            CFARGOSCATester(paramsFixedLis,
+                        cfarMode = cfarMode,
+                        cfarAlgorithm = cfarAlgorithm,
+                        thrFactor = thrFactor,
+                        considerEdges = false,
+                        indexLagg = refWindow/2,
+                        indexLead = refWindow/2,
+                        runTime = true,
+                        random = random,
+                        backend = backend,
+                        tol = 12) should be (true)
             }
           }
         }

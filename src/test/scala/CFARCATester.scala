@@ -16,6 +16,7 @@ import breeze.plot._
 import breeze.linalg._
 import breeze.math.Complex
 import breeze.signal.{fourierTr, iFourierTr}
+//import scala.util.control.Breaks._
 
 import org.scalatest.{FlatSpec, Matchers}
 
@@ -61,23 +62,35 @@ class CFARCATester[T <: Data](dut: CFARCore[T],
     else
       lWinSizes = Seq(dut.params.leadLaggWindowSize)
     val startGwin: Int = if (runTime) 2 else dut.params.guardWindowSize
-
+    var subWindowSize: Int = dut.params.minSubWindowSize.getOrElse(dut.params.leadLaggWindowSize)
+    var refCells: Int = dut.params.leadLaggWindowSize
+    
     for (lWinSize <- lWinSizes) {
       for (guardSize <- startGwin to dut.params.guardWindowSize) {
-        println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize")
         // form here output data
-        var subWindowSize: Int = dut.params.leadLaggWindowSize
         if (dut.params.includeCASH) {
-          if (dut.params.minSubWindowSize.get >= lWinSize | cfarMode != "CASH")
+          if (dut.params.minSubWindowSize.get > lWinSize) {
+            refCells =  dut.params.minSubWindowSize.get
+          }
+          else if (cfarMode != "CASH") {
             subWindowSize = lWinSize
-          else
+            refCells = lWinSize
+          }
+          else {
             subWindowSize = dut.params.minSubWindowSize.get
+            refCells = lWinSize
+          }
           poke(dut.io.subCells.get, subWindowSize)
         }
+        else {
+          poke(dut.io.subCells.get, subWindowSize)
+        }
+        println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize and subWindowSize = $subWindowSize")
+
         val considerEdges = if (dut.params.includeCASH == true) false else true
         val (expThr, expPeaks) = if (dut.params.includeCASH && cfarMode == "CASH")
-                                    CFARUtils.cfarCASH(in, referenceCells = lWinSize, subCells = subWindowSize, scalingFactor = thrFactor, plotEn = thrPlot)
-                                else
+                                    CFARUtils.cfarCASH(in, referenceCells = refCells, subCells = subWindowSize, scalingFactor = thrFactor, plotEn = thrPlot)
+                                 else
                                     CFARUtils.cfarCA(in, cfarMode = cfarMode, referenceCells = lWinSize, guardCells = guardSize, considerEdges = considerEdges, scalingFactor = thrFactor, plotEn = thrPlot)
 
         if (cfarModeNum == 3) {
@@ -86,7 +99,7 @@ class CFARCATester[T <: Data](dut: CFARCore[T],
         else {
           poke(dut.io.guardCells, guardSize)
         }
-        poke(dut.io.windowCells, lWinSize)
+        poke(dut.io.windowCells, refCells)
 
         if (dut.params.CFARAlgorithm != GOSCFARType) {
           poke(dut.io.divSum.get, log2Ceil(lWinSize))
