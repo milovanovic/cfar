@@ -51,10 +51,15 @@ class MinimumCircuit[T <: Data: Real](val protoIn: T, val n: Int = 16, val runTi
     // first layer should split input vector to pairs, compare and pass min to FindMin object
     val mins = io.in.grouped(2).toSeq.map(pair => Mux(pair(0) < pair(1), pair(0), pair(1)))
     val minFinal = FindMin(io.in.take(n/2), mins, n/2, io.inSize)
-    when (io.inSize.get === 1.U) {
-      io.out := io.in(0)
+    if (runTime == true) {
+      when (io.inSize.get === 1.U) {
+        io.out := io.in(0)
+      }
+      .otherwise {
+        io.out := minFinal
+      }
     }
-    .otherwise {
+    else {
       io.out := minFinal
     }
   }

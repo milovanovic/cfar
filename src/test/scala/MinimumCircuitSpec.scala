@@ -25,13 +25,15 @@ class MinimumCircuitTester[T <: Data: Real](dut: MinimumCircuit[T], tol: Int) ex
     for (size <- pow2Coll) {
       var min = testSignal.take(size).min
       // define all inputs even though some of them are not considered for min calculation
-      testSignal.zipWithIndex.foreach { case (sample, index) => poke(dut.io.in(index), sample)}
-      poke(dut.io.inSize.get, size)
-      dut.protoIn match {
-        case dspR: DspReal => realTolDecPts.withValue(tol) { expect(dut.io.out, min) }
-        case _ => fixTolLSBs.withValue(tol) { expect(dut.io.out, min) }
+      updatableDspVerbose.withValue(false) {
+        testSignal.zipWithIndex.foreach { case (sample, index) => poke(dut.io.in(index), sample)}
+        poke(dut.io.inSize.get, size)
+        dut.protoIn match {
+          case dspR: DspReal => realTolDecPts.withValue(tol) { expect(dut.io.out, min) }
+          case _ => fixTolLSBs.withValue(tol) { expect(dut.io.out, min) }
+        }
+        step(2)
       }
-      step(2)
     }
   }
   else {
@@ -43,13 +45,14 @@ class MinimumCircuitTester[T <: Data: Real](dut: MinimumCircuit[T], tol: Int) ex
       case d: DspReal => Seq.fill(dut.n)((Random.nextInt(Double.MaxValue.toInt) - Double.MaxValue.toInt).toDouble)
     }
     var min = testSignal.min
-    
-    testSignal.zipWithIndex.foreach { case (sample, index) => poke(dut.io.in(index), sample)}
-    dut.protoIn match {
-      case dspR: DspReal => realTolDecPts.withValue(tol) { expect(dut.io.out, min) }
-      case _ => fixTolLSBs.withValue(tol) { expect(dut.io.out, min) }
+    updatableDspVerbose.withValue(false) {
+      testSignal.zipWithIndex.foreach { case (sample, index) => poke(dut.io.in(index), sample)}
+      dut.protoIn match {
+        case dspR: DspReal => realTolDecPts.withValue(tol) { expect(dut.io.out, min) }
+        case _ => fixTolLSBs.withValue(tol) { expect(dut.io.out, min) }
+      }
+      step(4)
     }
-    step(4)
   }
 }
 
@@ -67,32 +70,32 @@ class MinimumCircuitSpec extends FlatSpec with Matchers {
   // FixedPoint
   for (size <- Seq(2, 4, 8, 16, 32)) {
     it should s"work with input size vector equal to $size and FixedPoint data input" in {
-      MinimumCircuitTester(FixedPoint(16.W, 5.BP), tol = 2) should be (true)
+      MinimumCircuitTester(FixedPoint(16.W, 5.BP), n = size, tol = 2) should be (true)
     }
   }
   
   for (size <- Seq(2, 8, 16, 32, 64)) {
     it should s"work with input size vector equal to $size, enabled run time configurable input size and FixedPoint data input" in {
-      MinimumCircuitTester(FixedPoint(16.W, 5.BP), runTime = true, tol = 2) should be (true)
+      MinimumCircuitTester(FixedPoint(16.W, 5.BP), n = size, runTime = true, tol = 2) should be (true)
     }
   }
   
   // SInt
   for (size <- Seq(2, 8, 16, 32, 64)) {
     it should s"work with input size vector equal to $size, enabled run time configurable input size and SInt data input" in {
-      MinimumCircuitTester(SInt(16.W), runTime = true, tol = 0) should be (true)
+      MinimumCircuitTester(SInt(16.W), n = size, runTime = true, tol = 0) should be (true)
     }
   }
   // UInt
   for (size <- Seq(2, 8, 16, 32, 64)) {
     it should s"work with input size vector equal to $size, enabled run time configurable input size and UInt data input" in {
-      MinimumCircuitTester(UInt(16.W), runTime = true, tol = 0) should be (true)
+      MinimumCircuitTester(UInt(16.W), n = size, runTime = true, tol = 0) should be (true)
     }
   }
   // DspReal
   for (size <- Seq(2, 8, 16, 32, 64)) {
     it should s"work with input size vector equal to $size, enabled run time configurable input size and DspReal data input" in {
-      MinimumCircuitTester(DspReal(), runTime = true, tol = 12) should be (true)
+      MinimumCircuitTester(DspReal(), n = size, runTime = true, tol = 12) should be (true)
     }
   }
 }
