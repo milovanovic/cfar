@@ -77,6 +77,8 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
     
     if (sendCut) {
       out.bits.data := cfar.io.out.bits.asUInt // This should connect everything
+      // This should be organized differently
+      // It is not possible to save peak list in registers
       when (cfar.io.fftBin === fftWin - 1.U) {
         detectedPeaksListTmp.map(c => false.B)
       }
@@ -98,12 +100,12 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
     out.valid          := cfar.io.out.valid
     cfar.io.out.ready  := out.ready
     out.bits.last := cfar.io.lastOut
-    
+
     val fields = Seq(
       RegField(log2Ceil(params.fftSize + 1), fftWin,
-        RegFieldDesc(name = "fftWin", desc = "fft size")),
+        RegFieldDesc(name = "fftWin", desc = "Determines fft size")),
       RegField(thresholdScalerWidth, thresholdScaler,
-        RegFieldDesc(name = "thresholdScaler", desc = "threshold scaler (threshold is )")),
+        RegFieldDesc(name = "thresholdScaler", desc = "Threshold scaler")),
       RegField(1, logOrLinearMode,
         RegFieldDesc(name = "logOrLinearMode", desc = "Denotes whether input data is in log or in linear mode")),
       RegField(divSumWidth, divSum,
@@ -113,7 +115,7 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
       RegField(1, cfarAlgorithm,
         RegFieldDesc(name = "cfarAlgorithm", desc = "Defines cfar algorithm, used only if parameter CFARAlgorithm is set to GOSCACFARType")),
       RegField(2, cfarMode,
-        RegFieldDesc(name = "cfarMode", desc = "Defines cfar mode CA (cell averaging), GO(greatest of) or SO(smallest of)")),
+        RegFieldDesc(name = "cfarMode", desc = "Defines cfar mode CA (cell averaging), GO (greatest of) or SO (smallest of)")),
       RegField(log2Ceil(params.leadLaggWindowSize + 1), windowCells,
         RegFieldDesc(name = "windowCells", desc = "Defines size of the leading and lagging window")),
       RegField(log2Ceil(params.guardWindowSize + 1), guardCells,
@@ -137,7 +139,7 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
   }
 }
 
-class AXI4CFARBlock[T <: Data : Real: BinaryRepresentation](params: CFARParams[T], sendCut: Boolean, address: AddressSet, _beatBytes: Int = 4)(implicit p: Parameters) extends CFARBlock[T, AXI4MasterPortParameters, AXI4SlavePortParameters, AXI4EdgeParameters, AXI4EdgeParameters, AXI4Bundle](params, sendCut, _beatBytes) with AXI4DspBlock with AXI4HasCSR {
+class AXI4CFARBlock[T <: Data : Real: BinaryRepresentation](params: CFARParams[T], sendCut: Boolean = false, address: AddressSet, _beatBytes: Int = 4)(implicit p: Parameters) extends CFARBlock[T, AXI4MasterPortParameters, AXI4SlavePortParameters, AXI4EdgeParameters, AXI4EdgeParameters, AXI4Bundle](params, sendCut, _beatBytes) with AXI4DspBlock with AXI4HasCSR {
   val mem = Some(AXI4RegisterNode(address = address, beatBytes = _beatBytes)) // use AXI4 memory mapped
 }
 
