@@ -13,7 +13,7 @@ import freechips.rocketchip.config._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.regmapper._
 
-abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B <: Data] (params: CFARParams[T], sendCut: Boolean, beatBytes: Int) extends LazyModule()(Parameters.empty) with DspBlock[D, U, E, O, B] with HasCSR {
+abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B <: Data] (params: CFARParams[T], beatBytes: Int) extends LazyModule()(Parameters.empty) with DspBlock[D, U, E, O, B] with HasCSR {
 
   val streamNode = AXI4StreamIdentityNode()
 
@@ -43,7 +43,7 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
     val subWindowSize = RegInit(params.leadLaggWindowSize.U(log2Ceil(params.leadLaggWindowSize + 1).W))
     //val detectedPeaksList = RegInit(0.U(params.fftSize.W)) // it will use a lot of registers
     val detectedPeaksListTmp = RegInit(VecInit(Seq.fill(params.fftSize)(false.B)))
-    
+
     // connect input
     cfar.io.in.valid := in.valid
     cfar.io.in.bits := in.bits.data.asTypeOf(params.protoIn)
@@ -73,10 +73,10 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
       cfar.io.indexLead.get := indexLead
     }
   
-    val detectedPeaksList = detectedPeaksListTmp.asUInt // then that send to RegField
+    val detectedPeaksList = detectedPeaksListTmp.asUInt
     
-    if (sendCut) {
-      out.bits.data := cfar.io.out.bits.asUInt // This should connect everything
+    if (params.sendCut) {
+      out.bits.data := cfar.io.out.bits.cut.get.asUInt
       // This should be organized differently
       // It is not possible to save peak list in registers
       when (cfar.io.fftBin === fftWin - 1.U) {
@@ -87,15 +87,7 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
       }
     }
     else {
-      val output = IO(new Bundle {
-        val threshold = Output(params.protoThreshold)
-        val fftBins   = Output(UInt(log2Ceil(params.fftSize).W))
-        val peak      = Output(Bool())
-      })
-      output.threshold := cfar.io.out.bits.threshold
-      output.fftBins   := cfar.io.fftBin
-      output.peak      := cfar.io.out.bits.peak
-      out.bits.data    := output.asUInt
+      out.bits.data    := Cat(cfar.io.out.bits.threshold.asUInt, cfar.io.fftBin, cfar.io.out.bits.peak) // output.asUInt
     }
     out.valid          := cfar.io.out.valid
     cfar.io.out.ready  := out.ready
@@ -139,25 +131,30 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
   }
 }
 
-class AXI4CFARBlock[T <: Data : Real: BinaryRepresentation](params: CFARParams[T], sendCut: Boolean = false, address: AddressSet, _beatBytes: Int = 4)(implicit p: Parameters) extends CFARBlock[T, AXI4MasterPortParameters, AXI4SlavePortParameters, AXI4EdgeParameters, AXI4EdgeParameters, AXI4Bundle](params, sendCut, _beatBytes) with AXI4DspBlock with AXI4HasCSR {
+class AXI4CFARBlock[T <: Data : Real: BinaryRepresentation](params: CFARParams[T], address: AddressSet, _beatBytes: Int = 4)(implicit p: Parameters) extends CFARBlock[T, AXI4MasterPortParameters, AXI4SlavePortParameters, AXI4EdgeParameters, AXI4EdgeParameters, AXI4Bundle](params, _beatBytes) with AXI4DspBlock with AXI4HasCSR {
   val mem = Some(AXI4RegisterNode(address = address, beatBytes = _beatBytes)) // use AXI4 memory mapped
 }
 
 object CFARDspBlock extends App
 {
-  val paramsCFAR: CFARParams[FixedPoint] = CFARParams(
-    protoIn = FixedPoint(15.W, 8.BP),
-    protoThreshold = FixedPoint(16.W, 8.BP), // output thres
-    protoScaler = FixedPoint(16.W, 8.BP),
+  val paramsCFAR = CFARParams(
+    protoIn = FixedPoint(16.W, 0.BP),
+    protoThreshold = FixedPoint(16.W, 0.BP),
+    protoScaler = FixedPoint(16.W, 0.BP),
+    leadLaggWindowSize = 64,
+    guardWindowSize = 4,
+    fftSize = 1024,
+    sendCut = false,
+    minSubWindowSize = None,
+    includeCASH = false,
     CFARAlgorithm = CACFARType
   )
 
   val baseAddress = 0x500
   implicit val p: Parameters = Parameters.empty
-  val cfarModule = LazyModule(new AXI4CFARBlock(paramsCFAR, true, AddressSet(baseAddress + 0x100, 0xFF), _beatBytes = 4) with dspblocks.AXI4StandaloneBlock {
+  val cfarModule = LazyModule(new AXI4CFARBlock(paramsCFAR, AddressSet(baseAddress + 0x100, 0xFF), _beatBytes = 4) with dspblocks.AXI4StandaloneBlock {
     override def standaloneParams = AXI4BundleParameters(addrBits = 32, dataBits = 32, idBits = 1)
   })
 
   chisel3.Driver.execute(args, ()=> cfarModule.module)
-  
 }
