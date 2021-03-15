@@ -26,7 +26,7 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
     // control registers
     val thresholdScalerWidth = params.protoScaler.getWidth
     val divSumWidth = log2Ceil(log2Ceil(params.leadLaggWindowSize + 1))
-    val fftWin = RegInit(0.U(log2Ceil(params.fftSize + 1).W))
+    val fftWin = RegInit(params.fftSize.U(log2Ceil(params.fftSize + 1).W))
     val thresholdScaler = RegInit(0.U(thresholdScalerWidth.W))
     val logOrLinearMode = RegInit(false.B)
     val divSum = RegInit(0.U(divSumWidth.W))
