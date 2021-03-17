@@ -32,6 +32,7 @@ case class CFARParams[T <: Data: Real](
   sendCut               : Boolean = true,           // enable output for cell under test
   guardWindowSize       : Int = 4,                  // maximum number of guard cells
   fftSize               : Int = 1024,               // maximum fft size
+  retiming              : Boolean = false,           // just temporary parameter to test registers
   numAddPipes           : Int = 0,                  // number of add pipeline registers
   numMulPipes           : Int = 0                   // number of mull pipeline registers
   ) {

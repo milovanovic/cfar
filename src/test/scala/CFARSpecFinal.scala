@@ -11,7 +11,7 @@ import org.scalatest.{FlatSpec, Matchers}
 
 class CFARFinalSpec extends FlatSpec with Matchers {
 
-  val fftSize = 512
+  val fftSize = 64
   val thrPlot = false
   val considerEdges = true
   val thrFactor = 3.5
@@ -40,7 +40,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
                 includeCASH = true,
                 CFARAlgorithm = CACFARType
               )
-              it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and subWindowSize = $subWindowSize " in {
+              it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and subWindowSize = $subWindowSize " ignore {
                 CFARCATester(paramsFixedASR,
                             cfarMode = cfarMode,
                             thrFactor = thrFactor,
@@ -64,7 +64,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
               includeCASH = true,
               CFARAlgorithm = CACFARType
             )
-            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" in {
+            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" ignore {
             CFARCATester(paramsFixedASR,
                         cfarMode = cfarMode,
                         thrFactor = thrFactor,
@@ -95,7 +95,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
             includeCASH = false,
             CFARAlgorithm = CACFARType
           )
-          it should s"test CA/SO/GO-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" ignore {
+          it should s"test CA/SO/GO-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" in {
           CFARCATester(paramsFixedMem,
                       cfarMode = cfarMode,
                       thrFactor = thrFactor,
@@ -176,6 +176,40 @@ class CFARFinalSpec extends FlatSpec with Matchers {
                         backend = backend,
                         tol = 12) should be (true)
             }
+          }
+        }
+      }
+    }
+  }
+  
+  // just test retiming and pipeline registers
+  
+   for (cfarMode <- Seq("Cell Averaging")) {
+    for (refWindow <- Seq(16)) {
+      for (guardWindow <- Seq(2)) {
+        for (backend <- Seq("verilator")) {
+          val paramsFixedMem: CFARParams[FixedPoint] = CFARParams(
+            protoIn = FixedPoint(24.W, 12.BP),
+            protoThreshold = FixedPoint(24.W, 12.BP),
+            protoScaler = FixedPoint(24.W, 12.BP),
+            leadLaggWindowSize = refWindow,
+            guardWindowSize = guardWindow,
+            retiming = true,//true,
+            numMulPipes = 1,
+            fftSize = fftSize,
+            minSubWindowSize = None, // test CACFAR with ShiftRegisterMem -> blockram/sram
+            includeCASH = false,
+            CFARAlgorithm = CACFARType
+          )
+          it should s"test CA/SO/GO-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and numMulPipes = 1" ignore {
+          CFARCATester(paramsFixedMem,
+                      cfarMode = cfarMode,
+                      thrFactor = thrFactor,
+                      considerEdges = considerEdges,
+                      runTime = false,
+                      random = random,
+                      backend = backend,
+                      tol = 3) should be (true)
           }
         }
       }

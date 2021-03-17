@@ -83,7 +83,8 @@ class CFARCATester[T <: Data](dut: CFARCore[T],
           poke(dut.io.subCells.get, subWindowSize)
         }
         else {
-          poke(dut.io.subCells.get, subWindowSize)
+           refCells = lWinSize
+          // poke(dut.io.subCells.get, subWindowSize)
         }
         println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize and subWindowSize = $subWindowSize")
 
