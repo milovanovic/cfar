@@ -88,7 +88,7 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val flushingDelayed = ShiftRegisterWithReset(in = flushing,
                                                 n = thresholdPip + retiming,
                                                 resetData = false.B,
-                                                reset = io.lastIn,
+                                                reset = io.lastOut,
                                                 en = true.B)
   when (io.lastOut) {
     lastCut := true.B
@@ -224,7 +224,7 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
     io.out.bits.peak := queueData.io.deq.bits.peak
     io.out.bits.threshold := queueData.io.deq.bits.threshold
     io.out.valid := queueData.io.deq.valid
-    io.fftBin := cntOut
+    io.fftBin := cntOut//queueFftBin.io.deq.bits
   }
 }
 

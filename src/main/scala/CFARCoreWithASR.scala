@@ -27,8 +27,12 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val thresholdPip = params.numAddPipes.max(params.numMulPipes) // because of logMode
   //val sumPip = if (params.CFARAlgorithm != GOSCFARType) 2 * params.numAddPipes else 0
   //val latencyComp = params.leadLaggWindowSize + params.guardWindowSize + 1 + sumPip + thresholdPip
+
+  val retiming = if (params.retiming) 3 else 0
+  val totalDelay = if (params.retiming) retiming + thresholdPip else thresholdPip
+
   val latencyComp = params.leadLaggWindowSize + params.guardWindowSize + 1 + thresholdPip
-  val latency = io.windowCells +& io.guardCells +& 1.U +& thresholdPip.U
+  val latency = io.windowCells +& io.guardCells +& 1.U // +& thresholdPip.U
   assert(io.fftWin > 2.U * io.windowCells + 2.U * io.guardCells + 1.U, "FFT size must be larger than total number of shifting cells inside CFAR core")
   val sumT: T = (io.in.bits * log2Ceil(params.leadLaggWindowSize)).cloneType // to prevent overflow
   // val sumlagg = RegInit(t = sumT, init = 0.U.asTypeOf(sumT))
@@ -57,8 +61,7 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val cellUnderTest = Module(new CellUnderTest(params.protoIn.cloneType))
   cellUnderTest.io.in <> laggGuard.io.out
   cellUnderTest.io.lastIn := laggGuard.io.lastOut
-  val lastOut = ShiftRegister(cellUnderTest.io.lastOut, thresholdPip, io.out.fire())
-  io.lastOut := lastOut
+  val lastOut = ShiftRegister(cellUnderTest.io.lastOut, totalDelay, true.B)
 
   val leadGuard = Module(new AdjustableShiftRegisterStream(params.protoIn.cloneType, params.guardWindowSize))
   leadGuard.io.in <> cellUnderTest.io.out
@@ -188,8 +191,9 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   }
   val diffInSubSize = Log2(io.subCells.get) - Log2(params.minSubWindowSize.get.U)
   val max = sumSubLaggs.zip(sumSubLeads).map { case (lagg, lead) => Real[T].max(lagg, lead) }
-  val maxFinal = WireDefault(VecInit(Seq.fill(numSums)(0.U.asTypeOf(sumT))))
-
+  val maxFinal = if (params.retiming) RegInit(VecInit(Seq.fill(numSums)(0.U.asTypeOf(sumT))))
+  else WireDefault(VecInit(Seq.fill(numSums)(0.U.asTypeOf(sumT))))
+  
   max.zip(activeSums).zipWithIndex.foreach {
     case ((max, active), ind) => {
       when (active === true.B) {
@@ -202,7 +206,8 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val minCircuit = Module(new MinimumCircuit(sumT.cloneType, numSums, runTime = true))
   minCircuit.io.in := maxFinal
   minCircuit.io.inSize.get := io.windowCells >> Log2(io.subCells.get) //io.windowCells
-  val min = minCircuit.io.out >> Log2(io.subCells.get)
+  val min = if (params.retiming) RegNext(minCircuit.io.out >> Log2(io.subCells.get)) else minCircuit.io.out >> Log2(io.subCells.get)
+  
   dontTouch(min)
   min.suggestName("clutterRepr")
 
@@ -222,12 +227,17 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   when (cntOut === (io.fftWin - 1.U) && io.out.fire() || (io.lastOut && io.out.fire)) {
     cntOut := 0.U
   }
-  
-  val fftBinOnOutput = cntOut //cntIn - latency
- 
+
   when (io.lastIn) {
     flushing := true.B
   }
+
+  val flushingDelayed =  ShiftRegisterWithReset(in = flushing,
+                                              n = totalDelay,
+                                              resetData = false.B,
+                                              reset = io.lastOut,
+                                              en = true.B)
+  
   
   when (lastOut) {
     lastCut := true.B
@@ -272,8 +282,9 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
 //  val leftThr    = BinaryRepresentation[T].shr(sumlagg, io.divSum.get)
 //  val rightThr   = BinaryRepresentation[T].shr(sumlead, io.divSum.get)
   
-  val leftThr    = BinaryRepresentation[T].shr(sumSubLaggs(0), io.divSum.get)
-  val rightThr   = BinaryRepresentation[T].shr(sumSubLeads(0), io.divSum.get)
+  val leftThr    = if (params.retiming) ShiftRegister(BinaryRepresentation[T].shr(sumSubLaggs(0), io.divSum.get), 2, en = true.B) else BinaryRepresentation[T].shr(sumSubLaggs(0), io.divSum.get)// BinaryRepresentation[T].shr(sumSubLaggs(0), io.divSum.get)
+  val rightThr   = if (params.retiming) ShiftRegister(BinaryRepresentation[T].shr(sumSubLeads(0), io.divSum.get), 2, en = true.B) else BinaryRepresentation[T].shr(sumSubLeads(0), io.divSum.get)
+  //BinaryRepresentation[T].shr(sumSubLeads(0), io.divSum.get)
   
   val greatestOf = Mux(leftThr > rightThr, leftThr, rightThr)
   val smallestOf = Mux(leftThr < rightThr, leftThr, rightThr)
@@ -296,8 +307,15 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   dontTouch(enableRightThr)
   enableRightThr.suggestName("enableRightThr")
 
-  val thrWithoutScaling = Mux(laggWindow.io.regFull && leadWindow.io.regFull,
-                               thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))
+  val thrWithoutScaling = if (params.retiming)
+                            RegNext(Mux(ShiftRegister(laggWindow.io.regFull && leadWindow.io.regFull, 2, en = true.B),
+                              thrByModes, Mux(ShiftRegister(enableRightThr || !leadWindow.io.regFull, 2, en = true.B), 0.U.asTypeOf(sumT), thrByModes)))
+                          else
+                            Mux(laggWindow.io.regFull && leadWindow.io.regFull,
+                              thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))
+  
+  /* Mux(laggWindow.io.regFull && leadWindow.io.regFull,
+                               thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))*/
 
   val threshold = DspContext.alter(DspContext.current.copy(
     numAddPipes = thresholdPip,
@@ -305,29 +323,55 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
       Mux(io.logOrLinearMode, thrWithoutScaling context_* io.thresholdScaler, thrWithoutScaling context_+ io.thresholdScaler)
   }
   
-  val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, thresholdPip, en = cellUnderTest.io.out.fire() || (flushing && io.out.ready))
-  io.in.ready := ~initialInDone || io.out.ready && ~flushing
+  val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, totalDelay, en = true.B)
+  //ShiftRegister(cellUnderTest.io.out.bits, thresholdPip, en = cellUnderTest.io.out.fire() || (flushing && io.out.ready))
   
-  val leftNeighb  = ShiftRegister(Mux(io.guardCells === 0.U, laggWindow.io.parallelOut.last, laggGuard.io.parallelOut.last), thresholdPip, en = true.B)
-  val rightNeighb = ShiftRegister(Mux(io.guardCells === 0.U, leadWindow.io.parallelOut.head, leadGuard.io.parallelOut.head), thresholdPip, en = true.B)
+  val leftNeighb  = ShiftRegister(Mux(io.guardCells === 0.U, laggWindow.io.parallelOut.last, laggGuard.io.parallelOut.last), totalDelay, en = true.B)
+  val rightNeighb = ShiftRegister(Mux(io.guardCells === 0.U, leadWindow.io.parallelOut.head, leadGuard.io.parallelOut.head), totalDelay, en = true.B)
   val isLocalMax = cutDelayed > leftNeighb && cutDelayed > rightNeighb
   val isPeak = cutDelayed  > threshold
 
   if (params.numAddPipes == 0 && params.numMulPipes == 0) {
+    // TODO: What is going on when consider edges parameter is not active
     io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
     if (params.sendCut)
       io.out.bits.cut.get := cutDelayed
+    io.in.ready := ~initialInDone || io.out.ready && ~flushing
     io.out.bits.threshold :=  threshold
     io.out.valid := initialInDone && io.in.fire() || flushing
+    io.lastOut := lastOut
+
     io.fftBin := cntOut
   }
   else {
-    // TODO: Add logic for pipeline registers
-    io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
+    val queueData = Module(new Queue((io.out.bits.cloneType), totalDelay + 1, flow = true))
+    // val queueFftBin = Module(new Queue((cntOut.cloneType), totalDelay + 1, flow = true))
+    io.in.ready := ~initialInDone || io.out.ready && ~flushingDelayed
+
+    queueData.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), totalDelay, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, totalDelay, en = true.B))
+
     if (params.sendCut)
-      io.out.bits.cut.get := cutDelayed
-    io.out.bits.threshold :=  threshold
-    io.out.valid := initialInDone && io.in.fire() || flushing
+      queueData.io.enq.bits.cut.get := cutDelayed
+    queueData.io.enq.bits.threshold := threshold
+    queueData.io.enq.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
+    queueData.io.deq.ready := io.out.ready
+
+//     queueFftBin.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), totalDelay, en = true.B)  || (flushingDelayed && ShiftRegister(io.out.ready, totalDelay, en = true.B))
+//     queueFftBin.io.enq.bits := cntOut
+//     queueFftBin.io.deq.ready := io.out.ready
+
+    val queueLast = Module(new Queue(Bool(), totalDelay + 1, flow = true))
+    queueLast.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), totalDelay, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, totalDelay, en = true.B))
+    queueLast.io.enq.bits := lastOut
+
+    queueLast.io.deq.ready := io.out.ready
+    io.lastOut := queueLast.io.deq.bits
+
+    if (params.sendCut)
+      io.out.bits.cut.get := queueData.io.deq.bits.cut.get
+    io.out.bits.peak := queueData.io.deq.bits.peak
+    io.out.bits.threshold := queueData.io.deq.bits.threshold
+    io.out.valid := queueData.io.deq.valid
     io.fftBin := cntOut
   }
 }
