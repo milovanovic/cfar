@@ -112,29 +112,50 @@ class CFARCATester[T <: Data](dut: CFARCore[T],
         for (i <- 0 until in.size) {
           poke(dut.io.in.valid, 0)
           val delay = 3//Random.nextInt(5)
-          step(delay)
+          //step(delay)
+          for (i <- 0 until delay) {
+            if (peek(dut.io.out.valid) == true) {
+              dut.params.protoIn match {
+                case dspR: DspReal => {
+                  realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get,  in(cntValidOut).toDouble) }
+                  realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+                }
+                case _ =>  {
+                  fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
+                  fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+                }
+              }
+              //fftBin
+              if (expPeaks.contains(peek(dut.io.fftBin))) {
+                expect(dut.io.out.bits.peak, 1)
+              }
+              cntValidOut += 1
+              threshold += peek(dut.io.out.bits.threshold)
+            }
+            step(1)
+          }
           poke(dut.io.in.valid, 1)
           poke(dut.io.in.bits, in(i))
           if (i == (in.size - 1))
             poke(dut.io.lastIn, 1)
-          if (peek(dut.io.out.valid) == true) {
-            dut.params.protoIn match {
-              case dspR: DspReal => {
-                realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get,  in(cntValidOut).toDouble) }
-                realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+            if (peek(dut.io.out.valid) == true) {
+              dut.params.protoIn match {
+                case dspR: DspReal => {
+                  realTolDecPts.withValue(tol) { expect(dut.io.out.bits.cut.get,  in(cntValidOut).toDouble) }
+                  realTolDecPts.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+                }
+                case _ =>  {
+                  fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
+                  fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+                }
               }
-              case _ =>  {
-                fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.cut.get, in(cntValidOut)) }
-                fixTolLSBs.withValue(tol) { expect(dut.io.out.bits.threshold, expThr(cntValidOut)) }
+              //fftBin
+              if (expPeaks.contains(peek(dut.io.fftBin))) {
+                expect(dut.io.out.bits.peak, 1)
               }
+              cntValidOut += 1
+              threshold += peek(dut.io.out.bits.threshold)
             }
-            //fftBin
-            if (expPeaks.contains(peek(dut.io.fftBin))) {
-              expect(dut.io.out.bits.peak, 1)
-            }
-            cntValidOut += 1
-            threshold += peek(dut.io.out.bits.threshold)
-          }
           step(1)
         }
         poke(dut.io.lastIn, 0)
@@ -142,7 +163,8 @@ class CFARCATester[T <: Data](dut: CFARCore[T],
         poke(dut.io.out.ready, 0)
         step(10)
         poke(dut.io.out.ready, 1)
-
+        println("Value of the counter is:")
+        println(cntValidOut.toString)
         while (cntValidOut < in.size) {
           if (peek(dut.io.out.valid) && peek(dut.io.out.ready)) {
             //expect(dut.io.out.bits.cut,  in(cntValidOut))

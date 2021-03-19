@@ -11,7 +11,7 @@ import org.scalatest.{FlatSpec, Matchers}
 
 class CFARFinalSpec extends FlatSpec with Matchers {
 
-  val fftSize = 64
+  val fftSize = 512
   val thrPlot = false
   val considerEdges = true
   val thrFactor = 3.5
@@ -95,7 +95,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
             includeCASH = false,
             CFARAlgorithm = CACFARType
           )
-          it should s"test CA/SO/GO-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" in {
+          it should s"test CA/SO/GO-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" ignore {
           CFARCATester(paramsFixedMem,
                       cfarMode = cfarMode,
                       thrFactor = thrFactor,
@@ -183,36 +183,69 @@ class CFARFinalSpec extends FlatSpec with Matchers {
   }
   
   // just test retiming and pipeline registers
-  
-   for (cfarMode <- Seq("Cell Averaging")) {
-    for (refWindow <- Seq(16)) {
-      for (guardWindow <- Seq(2)) {
-        for (backend <- Seq("verilator")) {
-          val paramsFixedMem: CFARParams[FixedPoint] = CFARParams(
-            protoIn = FixedPoint(24.W, 12.BP),
-            protoThreshold = FixedPoint(24.W, 12.BP),
-            protoScaler = FixedPoint(24.W, 12.BP),
-            leadLaggWindowSize = refWindow,
-            guardWindowSize = guardWindow,
-            retiming = true,//true,
-            numMulPipes = 1,
-            fftSize = fftSize,
-            minSubWindowSize = None, // test CACFAR with ShiftRegisterMem -> blockram/sram
-            includeCASH = false,
-            CFARAlgorithm = CACFARType
-          )
-          it should s"test CA/SO/GO-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and numMulPipes = 1" ignore {
+  for (cfarMode <- Seq("Cell Averaging", "Greatest Of", "Smallest Of")) {
+    for (refWindow <- Seq(16, 32)) { //, 64, 128)) {
+      for (guardWindow <- Seq(2)) {//, 4, 8)) {
+        for (backend <- Seq("verilator")) {//, "treadle")) {
+          for (numPipes <- Seq(1, 2, 3)) {
+            val paramsFixedMem: CFARParams[FixedPoint] = CFARParams(
+              protoIn = FixedPoint(16.W, 6.BP),
+              protoThreshold = FixedPoint(16.W, 6.BP),
+              protoScaler = FixedPoint(16.W, 6.BP),
+              leadLaggWindowSize = refWindow,
+              guardWindowSize = guardWindow,
+              retiming = true,
+              numMulPipes = numPipes,
+              fftSize = fftSize,
+              minSubWindowSize = None, // test CACFAR with ShiftRegisterMem -> blockram/sram
+              includeCASH = false,
+              CFARAlgorithm = CACFARType
+            )
+          it should s"test CA/SO/GO-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and numMulPipes = $numPipes and retiming included" in {
           CFARCATester(paramsFixedMem,
                       cfarMode = cfarMode,
                       thrFactor = thrFactor,
                       considerEdges = considerEdges,
-                      runTime = false,
+                      runTime = runTime,
                       random = random,
                       backend = backend,
                       tol = 3) should be (true)
+            }
           }
         }
       }
     }
   }
+
+//    for (cfarMode <- Seq("Cell Averaging")) {
+//     for (refWindow <- Seq(16)) {
+//       for (guardWindow <- Seq(2)) {
+//         for (backend <- Seq("verilator")) {
+//           val paramsFixedMem: CFARParams[FixedPoint] = CFARParams(
+//             protoIn = FixedPoint(24.W, 12.BP),
+//             protoThreshold = FixedPoint(24.W, 12.BP),
+//             protoScaler = FixedPoint(24.W, 12.BP),
+//             leadLaggWindowSize = refWindow,
+//             guardWindowSize = guardWindow,
+//             retiming = true,//true,
+//             numMulPipes = 3,
+//             fftSize = fftSize,
+//             minSubWindowSize = None, // test CACFAR with ShiftRegisterMem -> blockram/sram
+//             includeCASH = false,
+//             CFARAlgorithm = CACFARType
+//           )
+//           it should s"test CA/SO/GO-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and numMulPipes = 1" in {
+//           CFARCATester(paramsFixedMem,
+//                       cfarMode = cfarMode,
+//                       thrFactor = thrFactor,
+//                       considerEdges = considerEdges,
+//                       runTime = false,
+//                       random = random,
+//                       backend = backend,
+//                       tol = 3) should be (true)
+//           }
+//         }
+//       }
+//     }
+//   }
 }
