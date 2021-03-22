@@ -36,7 +36,7 @@ object FindMin
   }
 }
 
-class MinimumCircuit[T <: Data: Real](val protoIn: T, val n: Int = 16, val runTime: Boolean = true) extends Module {
+class MinimumCircuit[T <: Data: Real](val protoIn: T, val n: Int = 16, val runTime: Boolean = true, val retiming: Boolean = false) extends Module {
   require(n > 0 && isPow2(n), "Size of the input vector must be a power of 2 and it should be positive")
 
   val io = IO(new Bundle {
@@ -50,10 +50,13 @@ class MinimumCircuit[T <: Data: Real](val protoIn: T, val n: Int = 16, val runTi
   if (n != 1) {
     // first layer should split input vector to pairs, compare and pass min to FindMin object
     val mins = io.in.grouped(2).toSeq.map(pair => Mux(pair(0) < pair(1), pair(0), pair(1)))
-    val minFinal = FindMin(io.in.take(n/2), mins, n/2, io.inSize)
+    val minFinal = if (retiming) RegNext(FindMin(io.in.take(n/2), mins, n/2, io.inSize)) else FindMin(io.in.take(n/2), mins, n/2, io.inSize)
     if (runTime == true) {
       when (io.inSize.get === 1.U) {
-        io.out := io.in(0)
+        if (retiming)
+          io.out := RegNext(io.in(0))
+        else
+          io.out := io.in(0)
       }
       .otherwise {
         io.out := minFinal
@@ -64,7 +67,10 @@ class MinimumCircuit[T <: Data: Real](val protoIn: T, val n: Int = 16, val runTi
     }
   }
   else {
-    io.out := io.in(0)
+    if (retiming)
+      io.out := RegNext(io.in(0))
+    else
+      io.out := io.in(0)
   }
 }
 

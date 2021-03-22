@@ -28,7 +28,7 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   //val sumPip = if (params.CFARAlgorithm != GOSCFARType) 2 * params.numAddPipes else 0
   //val latencyComp = params.leadLaggWindowSize + params.guardWindowSize + 1 + sumPip + thresholdPip
 
-  val retiming = if (params.retiming) 3 else 0
+  val retiming = if (params.retiming) 4 else 0
   val totalDelay = if (params.retiming) retiming + thresholdPip else thresholdPip
 
   val latencyComp = params.leadLaggWindowSize + params.guardWindowSize + 1 + thresholdPip
@@ -203,7 +203,7 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
     }
   }
   
-  val minCircuit = Module(new MinimumCircuit(sumT.cloneType, numSums, runTime = true))
+  val minCircuit = Module(new MinimumCircuit(sumT.cloneType, numSums, runTime = true, retiming = true))
   minCircuit.io.in := maxFinal
   minCircuit.io.inSize.get := io.windowCells >> Log2(io.subCells.get) //io.windowCells
   val min = if (params.retiming) RegNext(minCircuit.io.out >> Log2(io.subCells.get)) else minCircuit.io.out >> Log2(io.subCells.get)
@@ -282,8 +282,8 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
 //  val leftThr    = BinaryRepresentation[T].shr(sumlagg, io.divSum.get)
 //  val rightThr   = BinaryRepresentation[T].shr(sumlead, io.divSum.get)
   
-  val leftThr    = if (params.retiming) ShiftRegister(BinaryRepresentation[T].shr(sumSubLaggs(0), io.divSum.get), 2, en = true.B) else BinaryRepresentation[T].shr(sumSubLaggs(0), io.divSum.get)// BinaryRepresentation[T].shr(sumSubLaggs(0), io.divSum.get)
-  val rightThr   = if (params.retiming) ShiftRegister(BinaryRepresentation[T].shr(sumSubLeads(0), io.divSum.get), 2, en = true.B) else BinaryRepresentation[T].shr(sumSubLeads(0), io.divSum.get)
+  val leftThr    = if (params.retiming) ShiftRegister(BinaryRepresentation[T].shr(sumSubLaggs(0), io.divSum.get), 4, en = true.B) else BinaryRepresentation[T].shr(sumSubLaggs(0), io.divSum.get)// BinaryRepresentation[T].shr(sumSubLaggs(0), io.divSum.get)
+  val rightThr   = if (params.retiming) ShiftRegister(BinaryRepresentation[T].shr(sumSubLeads(0), io.divSum.get), 4, en = true.B) else BinaryRepresentation[T].shr(sumSubLeads(0), io.divSum.get)
   //BinaryRepresentation[T].shr(sumSubLeads(0), io.divSum.get)
   
   val greatestOf = Mux(leftThr > rightThr, leftThr, rightThr)
@@ -308,8 +308,8 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   enableRightThr.suggestName("enableRightThr")
 
   val thrWithoutScaling = if (params.retiming)
-                            RegNext(Mux(ShiftRegister(laggWindow.io.regFull && leadWindow.io.regFull, 2, en = true.B),
-                              thrByModes, Mux(ShiftRegister(enableRightThr || !leadWindow.io.regFull, 2, en = true.B), 0.U.asTypeOf(sumT), thrByModes)))
+                            RegNext(Mux(ShiftRegister(laggWindow.io.regFull && leadWindow.io.regFull, 3, en = true.B),
+                              thrByModes, Mux(ShiftRegister(enableRightThr || !leadWindow.io.regFull, 3, en = true.B), 0.U.asTypeOf(sumT), thrByModes)))
                           else
                             Mux(laggWindow.io.regFull && leadWindow.io.regFull,
                               thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))

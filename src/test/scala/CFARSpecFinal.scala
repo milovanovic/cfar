@@ -39,7 +39,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
                 includeCASH = true,
                 CFARAlgorithm = CACFARType
               )
-              it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and subWindowSize = $subWindowSize" in {
+              it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and subWindowSize = $subWindowSize" ignore {
                 CFARCATester(paramsFixedASR,
                             cfarMode = cfarMode,
                             thrFactor = thrFactor,
@@ -63,7 +63,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
               includeCASH = true,
               CFARAlgorithm = CACFARType
             )
-            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" in {
+            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" ignore {
             CFARCATester(paramsFixedASR,
                         cfarMode = cfarMode,
                         thrFactor = thrFactor,
@@ -81,7 +81,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
   
   // Test module CFARCoreWithASR, FixedPoint data type and included pipes and retiming
   
-  for (cfarMode <- Seq("CASH", "Greatest Of", "Smallest Of", "Cell Averaging")) {
+  for (cfarMode <- Seq("CASH", "Greatest Of", "Smallest Of", "Cell Averaging")) {//, "Greatest Of", "Smallest Of", "Cell Averaging")) {
     for (refWindow <- Seq(16, 32)) {
       for (guardWindow <- Seq(2)) { //, 4, 8)) {
         for (backend <- Seq("verilator")) {//, "treadle")) {
@@ -127,7 +127,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
               includeCASH = true,
               CFARAlgorithm = CACFARType
             )
-            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and numMulPipes = 1" ignore {
+            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and numMulPipes = 1" in {
               CFARCATester(paramsFixedASR,
                           cfarMode = cfarMode,
                           thrFactor = thrFactor,
