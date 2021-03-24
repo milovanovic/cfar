@@ -19,11 +19,14 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val cntOut = RegInit(0.U(log2Ceil(params.fftSize).W))
   val initialInDone = RegInit(false.B)
   val thresholdPip = params.numAddPipes.max(params.numMulPipes) // because of logMode
+  val retiming = if (params.retiming) 1 else 0
+  val depthOfQueue = if (params.retiming) 1 + thresholdPip else thresholdPip
+
   //val sumPip = if (params.CFARAlgorithm != GOSCFARType) 2 * params.numAddPipes else 0
   //val latencyComp = params.leadLaggWindowSize + params.guardWindowSize + 1 + sumPip + thresholdPip
   val latencyComp = params.leadLaggWindowSize + params.guardWindowSize + 1 + thresholdPip
   //val latency = io.windowCells +& io.guardCells +& 1.U +& (sumPip + thresholdPip).U
-  val latency = io.windowCells +& io.guardCells +& 1.U +& thresholdPip.U
+  val latency = io.windowCells +& io.guardCells +& 1.U // +& thresholdPip.U
   assert(io.fftWin > 2.U * io.windowCells + 2.U * io.guardCells + 1.U, "FFT size must be larger than total number of shifting cells inside CFAR core")
   val sumT: T = (io.in.bits * log2Ceil(params.leadLaggWindowSize)).cloneType // to be sure that no overflow occured 
   val sumlagg = RegInit(t = sumT, init = 0.U.asTypeOf(sumT)) // also reset it when state is idle or something similar
@@ -52,9 +55,8 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val cellUnderTest = Module(new CellUnderTest(params.protoIn.cloneType))
   cellUnderTest.io.in <> laggGuard.io.out
   cellUnderTest.io.lastIn := laggGuard.io.lastOut
-  //val lastOut = ShiftRegister(cellUnderTest.io.lastOut, sumPip + thresholdPip, io.out.fire())
-  //val lastOut = ShiftRegister(cellUnderTest.io.lastOut, thresholdPip, io.out.fire())
-  //io.lastOut := lastOut
+  val lastOut = ShiftRegister(cellUnderTest.io.lastOut, depthOfQueue, true.B)
+
   
   val leadGuard = Module(new AdjustableShiftRegisterStream(params.protoIn.cloneType, params.guardWindowSize))
   leadGuard.io.in <> cellUnderTest.io.out
@@ -94,6 +96,12 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   when (io.lastIn) {
     flushing := true.B
   }
+  
+  val flushingDelayed = ShiftRegisterWithReset(in = flushing,
+                                              n = thresholdPip + retiming,
+                                              resetData = false.B,
+                                              reset = io.lastOut,
+                                              en = true.B)
   
   when (io.lastOut) {
     lastCut := true.B
@@ -168,9 +176,14 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   
   dontTouch(enableRightThr)
   enableRightThr.suggestName("enableRightThr")
-
-  val thrWithoutScaling = Mux(laggWindow.io.sorterFull.get && leadWindow.io.sorterFull.get,
+  
+   val thrWithoutScaling = if (params.retiming == true) 
+                            RegNext(Mux(laggWindow.io.sorterFull.get && leadWindow.io.sorterFull.get,
+                               thrByModes, Mux(enableRightThr || !leadWindow.io.sorterFull.get, 0.U.asTypeOf(sumT), thrByModes)))
+                          else
+                             Mux(laggWindow.io.sorterFull.get && leadWindow.io.sorterFull.get,
                                thrByModes, Mux(enableRightThr || !leadWindow.io.sorterFull.get, 0.U.asTypeOf(sumT), thrByModes))
+  
   
   val threshold = DspContext.alter(DspContext.current.copy(
     numAddPipes = thresholdPip,
@@ -184,63 +197,56 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
 //     case _ => 0
 //   })
 //   println(bpos.toString) // it uses binaryPoint growth
-  val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, thresholdPip, en = true.B) //en = cellUnderTest.io.out.fire() || (flushing && io.out.ready))
+  val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, depthOfQueue, en = true.B)
+  
   
   // TODO: Change peakgrouping logic!
-  
-  val leftNeighb  = ShiftRegister(Mux(io.guardCells === 0.U, laggWindow.io.sortedData.last, laggGuard.io.parallelOut.last), thresholdPip, en = true.B)
-  val rightNeighb = ShiftRegister(Mux(io.guardCells === 0.U, leadWindow.io.sortedData.head, leadGuard.io.parallelOut.head), thresholdPip, en = true.B)
+  val leftNeighb  = ShiftRegister(Mux(io.guardCells === 0.U, laggWindow.io.sortedData.last, laggGuard.io.parallelOut.last), depthOfQueue, en = true.B)
+  val rightNeighb = ShiftRegister(Mux(io.guardCells === 0.U, leadWindow.io.sortedData.head, leadGuard.io.parallelOut.head), depthOfQueue, en = true.B)
   val isLocalMax = cutDelayed > leftNeighb && cutDelayed > rightNeighb
   val isPeak = cutDelayed  > threshold
-  
-  // val leftNeighb  = ShiftRegister(laggGuard.io.parallelOut(io.guardCells - 1), thresholdPip, en = true.B)
-  // val rightNeighb = ShiftRegister(leadGuard.io.parallelOut(0), thresholdPip, en = true.B)
-  // val isLeftPeak  = leftNeighb  > threshold //consider here pipes!
-  // val isRightPeak = rightNeighb > threshold
-  // val isPeak      = cutDelayed  > threshold
-  // no pipes
-  io.in.ready := ~initialInDone || io.out.ready && ~flushing
+
   if (params.numAddPipes == 0 && params.numMulPipes == 0) {
     //io.out.bits.peak := cutDelayed > threshold
     io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
     if (params.sendCut)
       io.out.bits.cut.get := cutDelayed
+    io.in.ready := ~initialInDone || io.out.ready && ~flushing
     io.out.bits.threshold :=  threshold
     io.out.valid := initialInDone && io.in.fire() || flushing
     io.fftBin := cntOut //fftBinOnOutput
     io.lastOut := cellUnderTest.io.lastOut
   }
   else {
-    val outQueue = Module(new Queue(chiselTypeOf(io.out.bits), entries = thresholdPip, pipe = false, flow = true))
-    //outQueue.io.enq.bits.peak := cutDelayed > threshold
-    outQueue.io.enq.bits.peak :=  Mux(io.peakGrouping, isPeak && isLocalMax, isPeak) //Mux(io.peakGrouping, isPeak && ~isLeftPeak && ~isRightPeak, isPeak) 
-    if (params.sendCut) {
-      outQueue.io.enq.bits.cut.get := cutDelayed
-    }
+    val queueData = Module(new Queue((io.out.bits.cloneType), depthOfQueue + 1, flow = true))
+    //val queueFftBin = Module(new Queue((cntOut.cloneType), depthOfQueue + 1, flow = true))
+    io.in.ready := ~initialInDone || io.out.ready && ~flushingDelayed
+
+    queueData.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), depthOfQueue, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, depthOfQueue, en = true.B))
     
-    outQueue.io.enq.bits.threshold := threshold // trim here
-    outQueue.io.enq.valid := initialInDone && ShiftRegister(io.in.fire(), thresholdPip, false.B, true.B) || flushing
-    outQueue.io.deq.ready := io.out.ready
-    
-//     //val outBinQueue = Module(new Queue(chiselTypeOf(io.fftBin), entries = sumPip + thresholdPip, pipe = true, flow = true))
-//     val outBinQueue = Module(new Queue(chiselTypeOf(io.fftBin), entries = thresholdPip, pipe = false, flow = true))
-//     outBinQueue.io.enq.bits := cntOut //fftBinOnOutput
-//     outBinQueue.io.enq.valid := initialInDone && ShiftRegister(io.in.fire(), thresholdPip, false.B, true.B) || (flushing && ~io.lastOut) //(flushing && ~io.lastOut && io.out.ready)
-//     outBinQueue.io.deq.ready := io.out.ready
-    io.fftBin := cntOut
-    val outLastQueue = Module(new Queue(Bool(), entries = thresholdPip, pipe = false, flow = true))
-    
-    outLastQueue.io.enq.bits  := ShiftRegister(cellUnderTest.io.lastOut, thresholdPip, true.B)
-    outLastQueue.io.enq.valid := initialInDone && ShiftRegister(io.in.fire(), thresholdPip, false.B, true.B) || flushing
-    outLastQueue.io.deq.ready := io.out.ready
-  //  assert(outQueue.io.deq.valid === outBinQueue.io.deq.valid, "Must be asserted at the same time")
-    
-    io.lastOut := outLastQueue.io.deq.bits
-    io.out.bits.peak := outQueue.io.deq.bits.peak
     if (params.sendCut)
-      io.out.bits.cut.get  := outQueue.io.deq.bits.cut.get
-    io.out.bits.threshold := outQueue.io.deq.bits.threshold
-    io.out.valid := outQueue.io.deq.valid
+      queueData.io.enq.bits.cut.get := cutDelayed
+    queueData.io.enq.bits.threshold := threshold
+    queueData.io.enq.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
+    queueData.io.deq.ready := io.out.ready
+
+//     queueFftBin.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), depthOfQueue, en = true.B)  || (flushingDelayed && ShiftRegister(io.out.ready, depthOfQueue, en = true.B))
+//     queueFftBin.io.enq.bits := cntOut
+//     queueFftBin.io.deq.ready := io.out.ready
+
+    val queueLast = Module(new Queue(Bool(), depthOfQueue + 1, flow = true))
+    queueLast.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), depthOfQueue, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, depthOfQueue, en = true.B))
+    queueLast.io.enq.bits := lastOut
+    
+    queueLast.io.deq.ready := io.out.ready
+    io.lastOut := queueLast.io.deq.bits
+    
+    if (params.sendCut)
+      io.out.bits.cut.get := queueData.io.deq.bits.cut.get
+    io.out.bits.peak := queueData.io.deq.bits.peak
+    io.out.bits.threshold := queueData.io.deq.bits.threshold
+    io.out.valid := queueData.io.deq.valid
+    io.fftBin := cntOut//queueFftBin.io.deq.bits
   }
 }
 
