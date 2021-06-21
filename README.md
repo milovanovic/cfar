@@ -1,3 +1,4 @@
+
 Constant false alarm rate (CFAR) Chisel generator
 ======================================================
 
@@ -14,15 +15,15 @@ Presented hardware architecture supports six variants  of the CFAR algorithms wh
 
 Supported CFAR algorithms are listed below:
 Cell Averaging (CA) CFAR algorithms:
-* Classical CA -CFAR
-* Greatest of (GO) CA -CFAR
-* Smallest of  (SO) CA -CFAR
+* Classical CA-CFAR
+* Greatest of (GO) CA-CFAR
+* Smallest of  (SO) CA-CFAR
 
 Generalised Ordered Statistic (GOS) CFAR algorithms:
 
-* Cell Averaging (CA) -CFAR
-* Greatest of (GO) -CFAR
-* Smallest of  (SO) CA -CFAR
+* Cell Averaging (CA) GOS-CFAR
+* Greatest of (GO) GOS-CFAR
+* Smallest of (SO) COS-CFAR
 
 Since Generalised Ordered Statistic CFAR algorithms require sorting  input samples, [A Linear Insertion Sorter (LIS) Chisel Generator](https://github.com/milovanovic/lis) parametrized to support FIFO based sorter scheme, run time configurable size and descending sorter direction, has been used for lagging and leading reference cells.
 
@@ -31,10 +32,10 @@ The CFAR Chisel generator is described with following Scala files available insi
 * `CFARUtils.scala` - contains useful modules used inside CFARcore
 	* `AdjustableShiftRegisterStream`  - used for guard cells, interface conform to the AXI4 stream interface (ready/valid protocol with last signal). Depth of the register is controlled by the input signal `depth`.
 	* `CellUnderTest` - simple module describes behaviour of the cell under test. Interface of this module conform to the AXI4 stream interface (ready/valid protocol with last signal)
-	* `ShiftRegisterMemStream` - shift register implemented with chisel object [SyncReadMem](https://www.chisel-lang.org/api/latest/chisel3/SyncReadMem.html) for mapping it to BRAM/SRAM. Used when `CFARAlgorithm` is set to `CACFARType`. Interface conform to AXI4 stream (ready/valid protocol with last signal) with additional in/out signals such as `depth`, `memFull` and `memEmpty`. 
+	* `ShiftRegisterMemStream` - shift register implemented with chisel object [SyncReadMem](https://www.chisel-lang.org/api/latest/chisel3/SyncReadMem.html) for mapping it to BRAM/SRAM. Used when `CFARAlgorithm` is set to `CACFARType`. Interface conform to AXI4 stream (ready/valid protocol with last signal) with additional in/out signals such as `depth`, `memFull` and `memEmpty`.
 * `CFARCoreWithMem.scala` - CFAR core where CACFAR algorithm is implemented.  `ShiftRegisterMemStream` is used for leading/lagging cells
 * `CFARCoreWithLis.scala` - CFAR core where both GOSCACFAR and GOSCFAR  algorithms are implemented.  `LinearSorter` is used for leading/lagging cells
-* `CFARCore.scala` - contains interface of the generator and  `CFARCore` module which instantiate appropriate CFAR module checking `CFARAlgorithm` parameter 
+* `CFARCore.scala` - contains interface of the generator and  `CFARCore` module which instantiate appropriate CFAR module checking `CFARAlgorithm` parameter
 * `CFARParams.scala`- defines parameters of the CFAR generator
 * `CFARDspBlock.scala`-  contains description of  the `CFARDspBlock`.
 
@@ -42,14 +43,14 @@ The CFAR Chisel generator is described with following Scala files available insi
 
 [Decoupled](http://github.com/freechipsproject/chisel3/wiki/Interfaces-Bulk-Connections) interface is used where .bits are data that should be sorted.
 * `in: Flipped(Decoupled(params.protoIn))` - input data  wrapped with valid/ready signals
-* `lastIn: Bool()` - 	 denotes the last sample of the streaming input data	
+* `lastIn: Bool()` - 	 denotes the last sample of the streaming input data
 * Control registers:
 	* Common registers
 		* `thresholdScaler` - threshold scale factor, used to either multiply or add to the calculated noise to determine threshold for peak detection. It defines the probability of False Alarm(FA) and Missed Detection(MD)
-		* `logOrLinearMode` - input data is magnitude/squared magnitude (linear mode) or log2 magnitude (log mode) 
+		* `logOrLinearMode` - input data is magnitude/squared magnitude (linear mode) or log2 magnitude (log mode)
 		* `peakGrouping` - one bit register used to enable or disable local max checking logic
 		* `cfarAlgorithm` - only included if parameter `CFARAlgorithm`  is set to   `GOSCACFARType`  and define whether result of the `CACFAR` or `GOSCFAR` should be sent to the output
-		* `cfarMode` - defines cfar mode  
+		* `cfarMode` - defines cfar mode
 			* CA  - standard cell average
 			* GO - greatest of
 			* SO - smallest of
@@ -67,10 +68,10 @@ The CFAR Chisel generator is described with following Scala files available insi
 * `out: Decoupled(CFAROutFields)` - output streaming data wrapped with valid/ready signals
 	*  `CFAROutField` consists of
 		 * `peak: Bool` - define whether current cell under test is peak or not
-		 * `cut: protoIn`  - current cell under test 
+		 * `cut: protoIn`  - current cell under test
 		 * `threshold: protoThreshold` - current threshold value
 * `lastOut: Bool` - denotes the last sample of the streaming output
-*  `fftBin : UInt` - current fft bin 
+*  `fftBin : UInt` - current fft bin
 
 #### Dsp Block
 
@@ -79,7 +80,7 @@ The  CFAR generator is wrapped as generic DSP block in a diplomatic interface wh
 ## Parameter settings
 
 Design parameters are defined inside `case class CFARParams`. Users can customize design per use case by setting the appropriate parameters.
-   
+
     case class CFARParams[T <: Data: Real](
       protoIn           : T, // Data type of the input data
       protoThreshold    : T, // Data type of the threshold
@@ -90,7 +91,7 @@ Design parameters are defined inside `case class CFARParams`. Users can customiz
       fftSize           : Int = 1024, // maximum fft size which supports preceding fft block
       numAddPipes       : Int = 0,    // number of add pipeline registers
       numMulPipes       : Int = 0     // number of mull pipeline registers
-      ) 
+      )
 The further explanation of each parameter is given below:
 -   `protoIn:` represents type of the input data. Users can choose among following Chisel types: `UInt`, `SInt`, `FixedPoint`, `DspReal`. Type `DspReal`is used to make golden model of the digital design.  Input data type corresponds directly to output data type of the `LogMagMux` block.
 *   `protoThreshold:` is data type of threshold. Usually set to the same type value as the `protoIn`
@@ -104,7 +105,7 @@ The further explanation of each parameter is given below:
 	* `fftSize` - Maximum fft size which supports preceding fft block, default value is 1024
 	* `numAddPipes` - Number of pipeline registers added after +/- operation, used to pipe threshold value when log input mode is used
 	* `numMulPipes` - Number of pipeline registers added after * operation, used to pipe threshold value when linear input mode is used
-	
+
 ## Prerequisites
 
 The following software packages should be installed prior to running this project:
@@ -122,9 +123,9 @@ sbt test
 ## Tests
 
 This repository provides simple tests which confirm the correct behaviour of the proposed design. Tests are described with following files available inside `src/test/scala`:
-* `CFARUtilSpec` - test modules defined inside `CFARUtils.scala`  
+* `CFARUtilSpec` - test modules defined inside `CFARUtils.scala`
 * `CFARCoreSpec` - test `CFARCore` for various test cases
- 
+
 Tester functions such as `peek`, `poke` and `except`, available inside `DspTester` (check [dsptools Chisel library ](http://github.com/ucb-bar/dsptools)), are extensively used for design testing.
 
 ## TODO
