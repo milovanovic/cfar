@@ -24,7 +24,9 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val cntIn = RegInit(0.U(log2Ceil(params.fftSize).W))
   val cntOut = RegInit(0.U(log2Ceil(params.fftSize).W))
   val initialInDone = RegInit(false.B)
-  val thresholdPip = params.numAddPipes.max(params.numMulPipes) // because of logMode
+  val thresholdPipConfig = params.numAddPipes.max(params.numMulPipes) // because of logMode
+  val thresholdPip = if (params.logOrLinReg) thresholdPipConfig else if (params.logMode) params.numAddPipes else params.numMulPipes
+  
   //val sumPip = if (params.CFARAlgorithm != GOSCFARType) 2 * params.numAddPipes else 0
   //val latencyComp = params.leadLaggWindowSize + params.guardWindowSize + 1 + sumPip + thresholdPip
 
@@ -321,11 +323,20 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   /* Mux(laggWindow.io.regFull && leadWindow.io.regFull,
                                thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))*/
 
-  val threshold = DspContext.alter(DspContext.current.copy(
+  val threshold = if (params.logOrLinReg) DspContext.alter(DspContext.current.copy(
     numAddPipes = thresholdPip,
     numMulPipes = thresholdPip)) {
-      Mux(io.logOrLinearMode, thrWithoutScaling context_* io.thresholdScaler, thrWithoutScaling context_+ io.thresholdScaler)
-  }
+      Mux(io.logOrLinearMode.get, thrWithoutScaling context_* io.thresholdScaler, thrWithoutScaling context_+ io.thresholdScaler)
+    }
+    else if (!params.logMode)
+      DspContext.withNumMulPipes(params.numMulPipes) {
+        thrWithoutScaling context_* io.thresholdScaler
+      }
+    else
+      DspContext.withNumAddPipes(params.numAddPipes) {
+        thrWithoutScaling context_+ io.thresholdScaler
+      }
+
   
   val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, totalDelay, en = true.B)
   //ShiftRegister(cellUnderTest.io.out.bits, thresholdPip, en = cellUnderTest.io.out.fire() || (flushing && io.out.ready))

@@ -22,7 +22,9 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val cntIn = RegInit(0.U(log2Ceil(params.fftSize).W))
   val cntOut = RegInit(0.U(log2Ceil(params.fftSize).W))
   val initialInDone = RegInit(false.B)
-  val thresholdPip = params.numAddPipes.max(params.numMulPipes) // because of logMode
+  val thresholdPipConfig = params.numAddPipes.max(params.numMulPipes) // because of logMode
+  val thresholdPip = if (params.logOrLinReg) thresholdPipConfig else if (params.logMode) params.numAddPipes else params.numMulPipes
+  
   val latencyComp = params.leadLaggWindowSize + params.guardWindowSize + 1 + thresholdPip
   //val latency = io.windowCells +& io.guardCells +& 1.U +& (sumPip + thresholdPip).U
   val retiming = if (params.retiming) 1 else 0
@@ -175,13 +177,21 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
                                 Mux(enableRightThr,
                                   rightThr,
                                   thrByModes)))
-    
-  val threshold = DspContext.alter(DspContext.current.copy(
+
+  val threshold = if (params.logOrLinReg) DspContext.alter(DspContext.current.copy(
     numAddPipes = thresholdPip,
     numMulPipes = thresholdPip)) {
-      Mux(io.logOrLinearMode, thrWithoutScaling context_* io.thresholdScaler, thrWithoutScaling context_+ io.thresholdScaler)
-  }
- 
+      Mux(io.logOrLinearMode.get, thrWithoutScaling context_* io.thresholdScaler, thrWithoutScaling context_+ io.thresholdScaler)
+    }
+    else if (!params.logMode)
+      DspContext.withNumMulPipes(params.numMulPipes) {
+        thrWithoutScaling context_* io.thresholdScaler
+      }
+    else
+      DspContext.withNumAddPipes(params.numAddPipes) {
+        thrWithoutScaling context_+ io.thresholdScaler
+      }
+
   // val cutDelayed = if (depthOfQueue != 0)  ShiftRegister(cellUnderTest.io.out.bits, depthOfQueue, en = true.B) else cellUnderTest.io.out.bits
   val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, depthOfQueue, en = true.B)
 

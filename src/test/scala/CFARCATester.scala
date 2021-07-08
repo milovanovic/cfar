@@ -54,7 +54,10 @@ class CFARCATester[T <: Data](dut: CFARCore[T],
                       }
 
     poke(dut.io.cfarMode, cfarModeNum)
-    poke(dut.io.logOrLinearMode, 1)
+
+    if (dut.params.logOrLinReg) {
+      poke(dut.io.logOrLinearMode.get, 1)
+    }
 
     var lWinSizes: Seq[Int] = Seq()
     if (runTime)
@@ -86,7 +89,7 @@ class CFARCATester[T <: Data](dut: CFARCore[T],
            refCells = lWinSize
           // poke(dut.io.subCells.get, subWindowSize)
         }
-        println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize and subWindowSize = $subWindowSize")
+        //println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize and subWindowSize = $subWindowSize")
 
         val considerEdges = if (dut.params.includeCASH == true) false else true
         val (expThr, expPeaks) = if (dut.params.includeCASH && cfarMode == "CASH")
@@ -163,8 +166,8 @@ class CFARCATester[T <: Data](dut: CFARCore[T],
         poke(dut.io.out.ready, 0)
         step(10)
         poke(dut.io.out.ready, 1)
-        println("Value of the counter is:")
-        println(cntValidOut.toString)
+       // println("Value of the counter is:")
+       // println(cntValidOut.toString)
         while (cntValidOut < in.size) {
           if (peek(dut.io.out.valid) && peek(dut.io.out.ready)) {
             //expect(dut.io.out.bits.cut,  in(cntValidOut))

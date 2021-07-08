@@ -18,8 +18,10 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val cntIn = RegInit(0.U(log2Ceil(params.fftSize).W))
   val cntOut = RegInit(0.U(log2Ceil(params.fftSize).W))
   val initialInDone = RegInit(false.B)
-  val thresholdPip = params.numAddPipes.max(params.numMulPipes) // because of logMode
+  // val thresholdPip = params.numAddPipes.max(params.numMulPipes) // because of logMode
   val retiming = if (params.retiming) 1 else 0
+  val thresholdPipConfig = params.numAddPipes.max(params.numMulPipes) // because of logMode
+  val thresholdPip = if (params.logOrLinReg) thresholdPipConfig else if (params.logMode) params.numAddPipes else params.numMulPipes
   val depthOfQueue = if (params.retiming) 1 + thresholdPip else thresholdPip
 
   //val sumPip = if (params.CFARAlgorithm != GOSCFARType) 2 * params.numAddPipes else 0
@@ -185,12 +187,19 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
                                thrByModes, Mux(enableRightThr || !leadWindow.io.sorterFull.get, 0.U.asTypeOf(sumT), thrByModes))
   
   
-  val threshold = DspContext.alter(DspContext.current.copy(
+  val threshold = if (params.logOrLinReg) DspContext.alter(DspContext.current.copy(
     numAddPipes = thresholdPip,
     numMulPipes = thresholdPip)) {
-      //thrWithoutScaling context_* io.thresholdScaler
-      Mux(io.logOrLinearMode, thrWithoutScaling context_* io.thresholdScaler, thrWithoutScaling context_+ io.thresholdScaler)
-  }
+      Mux(io.logOrLinearMode.get, thrWithoutScaling context_* io.thresholdScaler, thrWithoutScaling context_+ io.thresholdScaler)
+    }
+    else if (!params.logMode)
+      DspContext.withNumMulPipes(params.numMulPipes) {
+        thrWithoutScaling context_* io.thresholdScaler
+      }
+    else
+      DspContext.withNumAddPipes(params.numAddPipes) {
+        thrWithoutScaling context_+ io.thresholdScaler
+      }
 
 //   val bpos = (threshold.cloneType match {
 //     case fp: FixedPoint => fp.binaryPoint.get

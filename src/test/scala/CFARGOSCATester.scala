@@ -60,7 +60,10 @@ class CFARGOSCATester[T <: Data](dut: CFARCore[T],
                         }
     
     poke(dut.io.cfarMode, cfarModeNum)
-    poke(dut.io.logOrLinearMode, 1)
+    
+    if (dut.params.logOrLinReg) {
+      poke(dut.io.logOrLinearMode.get, 1)
+    }
     
     var lWinSizes: Seq[Int] = Seq()
     if (runTime)
@@ -73,7 +76,7 @@ class CFARGOSCATester[T <: Data](dut: CFARCore[T],
     //for (lWinSize <- startLwin to dut.params.leadLaggWindowSize) {
     for (lWinSize <- lWinSizes) {
       for (guardSize <- startGwin to dut.params.guardWindowSize) {
-        println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize")
+        // println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize")
         
         indexLeadTmp = if (indexLead > lWinSize) lWinSize else indexLead
         indexLaggTmp = if (indexLagg > lWinSize) lWinSize else indexLagg
