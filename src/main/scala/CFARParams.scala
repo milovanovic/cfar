@@ -27,12 +27,14 @@ case class CFARParams[T <: Data: Real](
   protoScaler           : T,                        // Data type of the scaler
   CFARAlgorithm         : CFARType = GOSCACFARType, // CFAR algorithm
   includeCASH           : Boolean = false,          // provides CFAR cash algorithm besides algoritms defined inside CFARAlgorithm
-  minSubWindowSize      : Option[Int] = None,       // relevant only for CASH algoithm 
+  logMode               : Boolean = false,          // when false, input data are in linear mode, not relevant if linOrLogReg is enabled
+  logOrLinReg           : Boolean = false,          // add register for linear/log mode configuration
+  minSubWindowSize      : Option[Int] = None,       // relevant only for CASH algorithm
   leadLaggWindowSize    : Int = 16,                 // maximum number of leading/lagging cells
   sendCut               : Boolean = true,           // enable output for cell under test
   guardWindowSize       : Int = 4,                  // maximum number of guard cells
   fftSize               : Int = 1024,               // maximum fft size
-  retiming              : Boolean = false,           // just temporary parameter to test registers
+  retiming              : Boolean = false,          // just temporary parameter to test registers
   numAddPipes           : Int = 0,                  // number of add pipeline registers
   numMulPipes           : Int = 0                   // number of mull pipeline registers
   ) {

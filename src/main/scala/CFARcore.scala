@@ -33,7 +33,7 @@ class CFARIO [T <: Data: Real](params: CFARParams[T]) extends Bundle {
   // control registers
   val fftWin = Input(UInt(log2Ceil(params.fftSize + 1).W))
   val thresholdScaler = Input(params.protoScaler)
-  val logOrLinearMode = Input(Bool())
+  val logOrLinearMode = if (params.logOrLinReg) Some(Input(Bool())) else None
   val divSum = if (params.CFARAlgorithm != GOSCFARType) Some(Input(UInt(log2Ceil(log2Ceil(params.leadLaggWindowSize + 1)).W))) else None
   
   val peakGrouping = Input(Bool())
@@ -69,7 +69,9 @@ class CFARCore[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T
   cfarCore.io.lastIn := io.lastIn
   cfarCore.io.fftWin := io.fftWin
   cfarCore.io.thresholdScaler := io.thresholdScaler
-  cfarCore.io.logOrLinearMode := io.logOrLinearMode
+  
+  if (params.logOrLinReg)
+    cfarCore.io.logOrLinearMode.get := io.logOrLinearMode.get
   
   if (params.CFARAlgorithm != GOSCFARType) {
     cfarCore.io.divSum.get := io.divSum.get
@@ -88,6 +90,7 @@ class CFARCore[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T
   }
   
   if (params.includeCASH) {
+    println("I am here")
     cfarCore.io.subCells.get := io.subCells.get
   }
   cfarCore.io.out <> io.out
