@@ -90,7 +90,6 @@ class CFARCore[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T
   }
   
   if (params.includeCASH) {
-    println("I am here")
     cfarCore.io.subCells.get := io.subCells.get
   }
   cfarCore.io.out <> io.out
