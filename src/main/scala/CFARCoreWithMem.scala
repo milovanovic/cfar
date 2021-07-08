@@ -55,10 +55,16 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
   leadGuard.io.depth := io.guardCells
   leadGuard.io.lastIn := cellUnderTest.io.lastOut
   
-  val leadWindow    = Module(new ShiftRegisterMemStream(params.protoIn, params.leadLaggWindowSize))
+  //////////////// ADDED ///////////////
+  leadGuard.io.out.ready := io.out.ready
+  
+  val leadWindow    = Module(new ShiftRegisterMemStream(params.protoIn, params.leadLaggWindowSize, enInitStore = false))
   leadWindow.io.depth := io.windowCells
   leadWindow.io.in <> leadGuard.io.out
-  leadWindow.io.out.ready := Mux(lastCut, true.B, io.out.ready)
+  //leadWindow.io.out.ready := Mux(lastCut, true.B, io.out.ready)
+  
+  ////////////////////// CHANGED ////////////////////////
+  leadWindow.io.out.ready := io.out.ready
   
   cellUnderTest.io.out.ready := Mux(leadWindow.io.memFull, leadWindow.io.in.ready, io.out.ready)
   leadWindow.io.lastIn := leadGuard.io.lastOut

@@ -67,11 +67,15 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   leadGuard.io.in <> cellUnderTest.io.out
   leadGuard.io.depth := io.guardCells
   leadGuard.io.lastIn := cellUnderTest.io.lastOut
-
-  val leadWindow = Module(new AdjustableShiftRegisterStream(params.protoIn, params.leadLaggWindowSize, sendCnt = true))
+  leadGuard.io.out.ready := io.out.ready
+  
+  val leadWindow = Module(new AdjustableShiftRegisterStream(params.protoIn, params.leadLaggWindowSize, sendCnt = true, enInitStore = false))
   leadWindow.io.depth := io.windowCells
   leadWindow.io.in <> leadGuard.io.out
-  leadWindow.io.out.ready := Mux(lastCut, true.B, io.out.ready)
+  
+  ////////////////////// CHANGED ////////////////////////
+  leadWindow.io.out.ready := io.out.ready
+  // leadWindow.io.out.ready := Mux(lastCut, true.B, io.out.ready)
   val leadOutputVector = leadWindow.io.parallelOut
 
   cellUnderTest.io.out.ready := Mux(leadWindow.io.regFull, leadWindow.io.in.ready, io.out.ready)

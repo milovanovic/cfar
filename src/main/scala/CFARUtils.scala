@@ -358,7 +358,7 @@ object AdjustableShiftRegister {
 
 // this module should instatiate AdjustableShiftRegister and wrap it with AXI Stream interface
 // it is assumed that signal lastIn triggers flushing
-class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, val parallelOut: Boolean = false, val sendCnt: Boolean = false) extends Module { //Stream
+class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, val parallelOut: Boolean = false, val sendCnt: Boolean = false, val enInitStore: Boolean = true) extends Module { //Stream
   require(maxDepth > 1, s"Depth must be > 1, got $maxDepth")
   requireIsChiselType(proto)
 
@@ -420,7 +420,15 @@ class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, 
   io.regEmpty  := cntIn === 0.U && ~initialInDone
   io.regFull   := initialInDone && ~last
   //io.in.ready    := ~initialInDone || io.out.ready && ~last // or without ~last
-  io.in.ready    := Mux(io.depth === 0.U, io.out.ready, ~initialInDone || io.out.ready && ~last)
+  
+  ///////////////// CHANGED /////////////////////////
+  if (enInitStore) {
+    io.in.ready    :=  Mux(io.depth === 0.U, io.out.ready, ~initialInDone || io.out.ready && ~last)
+  }
+  else {
+    io.in.ready    :=  Mux(io.depth === 0.U, io.out.ready, io.out.ready && ~last)
+  }
+  
   dontTouch(io.parallelOut)
   io.out.bits    := Mux(io.depth === 0.U, io.in.bits, adjShiftReg)
   io.parallelOut := adjShiftRegOut // parallel output is not important
@@ -480,7 +488,7 @@ object AdjShiftApp extends App
   chisel3.Driver.execute(args,()=>new AdjustableShiftRegisterStream(UInt(16.W), 6))
 }
 
-class ShiftRegisterMemStream[T <: Data](val proto: T, val maxDepth: Int) extends Module {
+class ShiftRegisterMemStream[T <: Data](val proto: T, val maxDepth: Int, val enInitStore: Boolean = true) extends Module {
   require(maxDepth > 1, s"Depth must be > 1, got $maxDepth")
   requireIsChiselType(proto)
 
@@ -545,7 +553,15 @@ class ShiftRegisterMemStream[T <: Data](val proto: T, val maxDepth: Int) extends
   
   io.memEmpty  := writeIdxReg === 0.U && ~initialInDone
   io.memFull   := initialInDone && ~last
-  io.in.ready  := ~initialInDone || io.out.ready && ~last
+  //io.in.ready  := ~initialInDone || io.out.ready && ~last
+  ////////////////// CHANGED ////////////////////////////
+  if (enInitStore) {
+    io.in.ready  := ~initialInDone || io.out.ready && ~last //io.out.ready && ~last
+  }
+  else {
+    io.in.ready  := io.out.ready && ~last
+  }
+  
   io.out.bits  := outputQueue.io.deq.bits //mem.read(readIdx)
   
   io.lastOut   := lastOut
