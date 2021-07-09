@@ -48,3 +48,6 @@ lazy val lis = (project in file("lis"))
 lazy val cfar = (project in file("."))
   .dependsOn(lis)
   .settings(commonSettings: _*)
+
+scalacOptions += "-Ywarn-unused-import"
+
