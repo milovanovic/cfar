@@ -20,7 +20,9 @@ class CFARFinalSpec extends FlatSpec with Matchers {
   
   // TODO: Test this feature also
   // for (considerEdges <- Seq(false, true)) {
-  
+  // Important: when retiming is on then numMulPipes needs to be equal to 1
+  // There are some issues when verilator is used and large amount of tests are run. When treadle is activated then everything passes.
+
   for (cfarMode <- Seq("CASH", "Greatest Of", "Smallest Of", "Cell Averaging")) {
     for (refWindow <- Seq(16, 32)) { // 32, 64, 128
       for (guardWindow <- Seq(2)) { //, 4, 8)) {
@@ -39,7 +41,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
                 includeCASH = true,
                 CFARAlgorithm = CACFARType
               )
-              it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and subWindowSize = $subWindowSize" in {
+              it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and subWindowSize = $subWindowSize" ignore {
                 CFARCATester(paramsFixedASR,
                             cfarMode = cfarMode,
                             thrFactor = thrFactor,
@@ -63,7 +65,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
               includeCASH = true,
               CFARAlgorithm = CACFARType
             )
-            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" in {
+            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" ignore {
             CFARCATester(paramsFixedASR,
                         cfarMode = cfarMode,
                         thrFactor = thrFactor,
@@ -84,7 +86,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
   for (cfarMode <- Seq("CASH", "Greatest Of", "Smallest Of", "Cell Averaging")) {//, "Greatest Of", "Smallest Of", "Cell Averaging")) {
     for (refWindow <- Seq(16, 32)) {
       for (guardWindow <- Seq(2)) { //, 4, 8)) {
-        for (backend <- Seq("verilator")) {//, "treadle")) {
+        for (backend <- Seq("treadle")) {//, "treadle")) {
           if (cfarMode == "CASH") {
             for (subWindowSize <- CFARUtils.pow2Divisors(refWindow).tail.toSeq) { //) { 
               println(subWindowSize.toString)
@@ -105,7 +107,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
                 CFARCATester(paramsFixedASR,
                             cfarMode = cfarMode,
                             thrFactor = thrFactor,
-                            considerEdges = false,
+                            considerEdges = considerEdges,
                             runTime = runTime,
                             random = random,
                             backend = backend,
@@ -158,7 +160,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
             includeCASH = false,
             CFARAlgorithm = CACFARType
           )
-          it should s"test CA/SO/GO-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" in {
+          it should s"test CA/SO/GO-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" ignore {
           CFARCATester(paramsFixedMem,
                       cfarMode = cfarMode,
                       thrFactor = thrFactor,
@@ -190,7 +192,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
               includeCASH = false,
               CFARAlgorithm = GOSCACFARType
             )
-            it should s"test GOSCA CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode , cfarAlgorithm = $cfarAlgorithm and backend = $backend" in {
+            it should s"test GOSCA CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode , cfarAlgorithm = $cfarAlgorithm and backend = $backend" ignore {
             CFARGOSCATester(paramsFixedLis,
                         cfarMode = cfarMode,
                         cfarAlgorithm = cfarAlgorithm,
@@ -229,7 +231,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
               includeCASH = false,
               CFARAlgorithm = GOSCACFARType
             )
-            it should s"test GOSCA CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode , cfarAlgorithm = $cfarAlgorithm and backend = $backend and numMulPipes = 1" in {
+            it should s"test GOSCA CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode , cfarAlgorithm = $cfarAlgorithm and backend = $backend and numMulPipes = 1" ignore {
             CFARGOSCATester(paramsFixedLis,
                         cfarMode = cfarMode,
                         cfarAlgorithm = cfarAlgorithm,
@@ -265,7 +267,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
               includeCASH = false,
               CFARAlgorithm = GOSCACFARType
             )
-            it should s"test GOSCA CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode , cfarAlgorithm = $cfarAlgorithm and backend = $backend and DspReal data type" in {
+            it should s"test GOSCA CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode , cfarAlgorithm = $cfarAlgorithm and backend = $backend and DspReal data type" ignore {
             CFARGOSCATester(paramsFixedLis,
                         cfarMode = cfarMode,
                         cfarAlgorithm = cfarAlgorithm,

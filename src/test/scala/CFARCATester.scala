@@ -89,7 +89,7 @@ class CFARCATester[T <: Data](dut: CFARCore[T],
            refCells = lWinSize
           // poke(dut.io.subCells.get, subWindowSize)
         }
-        //println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize and subWindowSize = $subWindowSize")
+        println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize and subWindowSize = $subWindowSize")
 
         val considerEdges = if (dut.params.includeCASH == true) false else true
         val (expThr, expPeaks) = if (dut.params.includeCASH && cfarMode == "CASH")
