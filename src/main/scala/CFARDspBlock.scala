@@ -41,15 +41,18 @@ trait AXI4CFARStandaloneBlock extends AXI4CFARBlock[FixedPoint] {
 }
 
 abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B <: Data] (params: CFARParams[T], beatBytes: Int) extends LazyModule()(Parameters.empty) with DspBlock[D, U, E, O, B] with HasCSR {
-  
-  //previous version
-  //val streamNode = AXI4StreamIdentityNode()
-  
+
+  val outputWidthMin = if (params.sendCut)
+                          params.protoThreshold.getWidth + params.protoIn.getWidth + log2Ceil(params.fftSize) + 1
+                       else
+                          params.protoThreshold.getWidth + log2Ceil(params.fftSize) + 1
+
   val masterParams = AXI4StreamMasterParameters(
     name = "AXI4 Stream xWrDataPreProc",
-    n = 6, // 4*8 -> 32 bits -> maybe can be parametrized from the top
+    n = (outputWidthMin + 8 - 1) / 8,
     numMasters = 1
   )
+  println(((outputWidthMin + 8 -1)/8).toString)
   val slaveParams = AXI4StreamSlaveParameters()
   val slaveNode  = AXI4StreamSlaveNode(slaveParams)
   val masterNode = AXI4StreamMasterNode(masterParams)
@@ -111,7 +114,8 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
         RegFieldDesc(name = "divSum", desc = "Denotes div factor of the sliding sum when CACFAR algorithm is used"))
     }
     if (params.includeCASH == true) {
-      val subWindowSize = RegInit(params.leadLaggWindowSize.U(log2Ceil(params.leadLaggWindowSize + 1).W))
+      //val subWindowSize = RegInit(params.leadLaggWindowSize.U(log2Ceil(params.leadLaggWindowSize + 1).W)) //RegInit(params.leadLaggWindowSize.U(log2Ceil(params.leadLaggWindowSize + 1).W))
+      val subWindowSize = RegInit(0.U(log2Ceil(params.leadLaggWindowSize + 1).W))
       subWindowSize.suggestName("subWindowSize")
       commonFields = commonFields :+ RegField(log2Ceil(params.leadLaggWindowSize + 1) , subWindowSize,
         RegFieldDesc(name = "subWindowSize", desc = "Defines sub-window size used in CASH algorithm"))
@@ -143,7 +147,7 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
     //val detectedPeaksList = detectedPeaksListTmp.asUInt
 
     if (params.sendCut) {
-      require(cfar.io.out.bits.threshold.getWidth + cfar.io.out.bits.cut.get.getWidth + cfar.io.fftBin.getWidth + 1 < 48)
+//      require(cfar.io.out.bits.threshold.getWidth + cfar.io.out.bits.cut.get.getWidth + cfar.io.fftBin.getWidth + 1 < 48)
       out.bits.data := Cat(cfar.io.out.bits.threshold.asUInt, cfar.io.out.bits.cut.get.asUInt, cfar.io.fftBin, cfar.io.out.bits.peak)
     }
     else {
