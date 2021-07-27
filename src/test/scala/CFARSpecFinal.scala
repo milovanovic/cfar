@@ -13,15 +13,14 @@ class CFARFinalSpec extends FlatSpec with Matchers {
 
   val fftSize = 512
   val thrPlot = false
-  val considerEdges = true
+  val considerEdges = false
   val thrFactor = 3.5
   val runTime = true
   val random = false
-  
-  // TODO: Test this feature also
-  // for (considerEdges <- Seq(false, true)) {
+
   // Important: when retiming is on then numMulPipes needs to be equal to 1
   // There are some issues when verilator is used and large amount of tests are run. When treadle is activated then everything passes.
+  // Another important note is that if we want to suport not only power of 2 windowCell size then minSubWindowSize needs to be 2 and that adds aditional logic into the system - not tested for that case on hardware
 
   for (cfarMode <- Seq("CASH", "Greatest Of", "Smallest Of", "Cell Averaging")) {
     for (refWindow <- Seq(16, 32)) { // 32, 64, 128
@@ -41,7 +40,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
                 includeCASH = true,
                 CFARAlgorithm = CACFARType
               )
-              it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and subWindowSize = $subWindowSize" ignore {
+              it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and subWindowSize = $subWindowSize" in {
                 CFARCATester(paramsFixedASR,
                             cfarMode = cfarMode,
                             thrFactor = thrFactor,
@@ -65,7 +64,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
               includeCASH = true,
               CFARAlgorithm = CACFARType
             )
-            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" ignore {
+            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend" in {
             CFARCATester(paramsFixedASR,
                         cfarMode = cfarMode,
                         thrFactor = thrFactor,
@@ -103,7 +102,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
                 includeCASH = true,
                 CFARAlgorithm = CACFARType
               )
-              it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and subWindowSize = $subWindowSize and numMulPipes = 1" in {
+              it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and subWindowSize = $subWindowSize and numMulPipes = 1" ignore {
                 CFARCATester(paramsFixedASR,
                             cfarMode = cfarMode,
                             thrFactor = thrFactor,
@@ -129,7 +128,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
               includeCASH = true,
               CFARAlgorithm = CACFARType
             )
-            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and numMulPipes = 1" in {
+            it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and numMulPipes = 1" ignore {
               CFARCATester(paramsFixedASR,
                           cfarMode = cfarMode,
                           thrFactor = thrFactor,
@@ -305,7 +304,7 @@ class CFARFinalSpec extends FlatSpec with Matchers {
               includeCASH = false,
               CFARAlgorithm = CACFARType
             )
-          it should s"test CA/SO/GO-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and numMulPipes = $numPipes and retiming included" in {
+          it should s"test CA/SO/GO-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend and numMulPipes = $numPipes and retiming included" ignore {
           CFARCATester(paramsFixedMem,
                       cfarMode = cfarMode,
                       thrFactor = thrFactor,
@@ -320,6 +319,40 @@ class CFARFinalSpec extends FlatSpec with Matchers {
       }
     }
   }
+
+// Those test cases are used only for testing new functionalities
+/*  for (cfarMode <- Seq("Greatest Of")) {
+    for (refWindow <- Seq(16)) { // 32, 64, 128
+      for (guardWindow <- Seq(2)) { //, 4, 8)) {
+        for (backend <- Seq("verilator")) {//, "treadle")) {
+          val paramsFixedASR: CFARParams[FixedPoint] = CFARParams(
+            protoIn = FixedPoint(16.W, 6.BP),
+            protoThreshold = FixedPoint(16.W, 6.BP),
+            protoScaler = FixedPoint(16.W, 6.BP),
+            leadLaggWindowSize = refWindow,
+            guardWindowSize = guardWindow,
+            retiming = true,
+            numMulPipes = 1,
+            fftSize = fftSize,
+            minSubWindowSize = Some(2), // test CACFAR with Adjustable shift registers
+            includeCASH = true,
+            CFARAlgorithm = CACFARType,
+            edgesMode = Cyclic
+          )
+          it should s"test CA/SO/GO/CASH-CFAR core with reference window = $refWindow, guard window = $guardWindow, cfarMode = $cfarMode and backend = $backend - debug test" in {
+          CFARCATester(paramsFixedASR,
+                      cfarMode = cfarMode,
+                      thrFactor = thrFactor,
+                      considerEdges = considerEdges,
+                      runTime = false,
+                      random = random,
+                      backend = backend,
+                      tol = 3) should be (true)
+          }
+        }
+      }
+    }
+  }*/
 
 //    for (cfarMode <- Seq("Cell Averaging")) {
 //     for (refWindow <- Seq(16)) {

@@ -243,8 +243,7 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
                                               resetData = false.B,
                                               reset = io.lastOut,
                                               en = true.B)
-  
-  
+
   when (lastOut) {
     lastCut := true.B
     flushing := false.B
@@ -309,19 +308,71 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   when (io.lastOut) {
     enableRightThr := false.B
   }
-  
-  dontTouch(enableRightThr)
-  enableRightThr.suggestName("enableRightThr")
 
-  val thrWithoutScaling = if (params.retiming)
-                            RegNext(Mux(ShiftRegister(laggWindow.io.regFull && leadWindow.io.regFull, 3, en = true.B),
-                              thrByModes, Mux(ShiftRegister(enableRightThr || !leadWindow.io.regFull, 3, en = true.B), 0.U.asTypeOf(sumT), thrByModes)))
-                          else
-                            Mux(laggWindow.io.regFull && leadWindow.io.regFull,
-                              thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))
-  
-  /* Mux(laggWindow.io.regFull && leadWindow.io.regFull,
-                               thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))*/
+  val thrWithoutScaling = params.edgesMode match {
+    case Cyclic  => if (params.retiming)
+                      RegNext(Mux(ShiftRegister(laggWindow.io.regFull && leadWindow.io.regFull, 3, en = true.B),
+                        thrByModes, Mux(ShiftRegister(enableRightThr || !leadWindow.io.regFull, 3, en = true.B), 0.U.asTypeOf(sumT), thrByModes)))
+                    else
+                       Mux(laggWindow.io.regFull && leadWindow.io.regFull,
+                         thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))
+    case _  =>
+      val leftFlag  = WireDefault(false.B)
+      val rightFlag = WireDefault(false.B)
+      val cntCutOut = RegInit(0.U(log2Ceil(params.fftSize).W))
+
+      when (cellUnderTest.io.out.fire()) {
+        cntCutOut := cntCutOut + 1.U
+      }
+      when (cntCutOut === (io.fftWin - 1.U) && cellUnderTest.io.out.fire()) {
+        cntCutOut := 0.U
+      }
+
+      when (cntCutOut < (io.windowCells + io.guardCells)) {
+        leftFlag := true.B
+      }
+      .otherwise {
+        leftFlag := false.B
+      }
+
+      when (cntCutOut > (io.fftWin - io.windowCells - io.guardCells - 1.U)) {
+        rightFlag := true.B
+      }
+      .otherwise {
+        rightFlag := false.B
+      }
+
+      val leftFlagShift = ShiftRegister(leftFlag, 3, en = true.B)
+      val rightFlagShift = ShiftRegister(rightFlag, 3, en = true.B)
+
+      // Make those as an option and try to generalize this parameter retiming!!!
+      val zeroThrNoScaling = if (params.retiming)
+                               RegNext(Mux(leftFlagShift || rightFlagShift, 0.U.asTypeOf(sumT), thrByModes))
+                             else
+                               Mux(leftFlag || rightFlag, 0.U.asTypeOf(sumT), thrByModes)
+
+      val cyclicThrNoScaling = if (params.retiming)
+                                RegNext(Mux(ShiftRegister(laggWindow.io.regFull && leadWindow.io.regFull, 3, en = true.B),
+                                  thrByModes, Mux(ShiftRegister(enableRightThr || !leadWindow.io.regFull, 3, en = true.B), 0.U.asTypeOf(sumT), thrByModes)))
+                               else
+                                Mux(laggWindow.io.regFull && leadWindow.io.regFull,
+                                  thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))
+
+      val nonCyclicThrNoScaling = if (params.retiming)
+                                    RegNext(Mux(leftFlagShift, leftThr, Mux(rightFlagShift, rightThr, thrByModes)))
+                                  else
+                                    Mux(leftFlag, leftThr, Mux(rightFlag, rightThr, thrByModes))
+
+      if (params.edgesMode == AllEdgeModes) {
+        Mux(io.edgesMode.get === 0.U, zeroThrNoScaling, Mux(io.edgesMode.get === 1.U, nonCyclicThrNoScaling, cyclicThrNoScaling))
+      }
+      else if (params.edgesMode == NonCyclic) {
+        nonCyclicThrNoScaling
+      }
+      else {
+        zeroThrNoScaling
+      }
+  }
 
   val threshold = if (params.logOrLinReg) DspContext.alter(DspContext.current.copy(
     numAddPipes = thresholdPip,
@@ -336,7 +387,6 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
       DspContext.withNumAddPipes(params.numAddPipes) {
         thrWithoutScaling context_+ io.thresholdScaler
       }
-
   
   val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, totalDelay, en = true.B)
   //ShiftRegister(cellUnderTest.io.out.bits, thresholdPip, en = cellUnderTest.io.out.fire() || (flushing && io.out.ready))
@@ -347,18 +397,24 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val isPeak = cutDelayed  > threshold
 
   if (params.numAddPipes == 0 && params.numMulPipes == 0) {
-    // TODO: What is going on when consider edges parameter is not active
-    io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
+    if (params.edgesMode == Zero) {
+      val zeroFlag = Mux(cntOut < (io.windowCells + io.guardCells) || cntOut > (io.fftWin - io.windowCells - io.guardCells), true.B, false.B)
+      io.out.bits.peak := Mux(zeroFlag, false.B, Mux(io.peakGrouping, isPeak && isLocalMax, isPeak))
+      io.out.bits.threshold := Mux(zeroFlag, 0.U.asTypeOf(threshold), threshold)
+    }
+    else {
+      io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
+      io.out.bits.threshold :=  threshold
+    }
     if (params.sendCut)
       io.out.bits.cut.get := cutDelayed
     io.in.ready := ~initialInDone || io.out.ready && ~flushing
-    io.out.bits.threshold :=  threshold
     io.out.valid := initialInDone && io.in.fire() || flushing
     io.lastOut := lastOut
-
     io.fftBin := cntOut
   }
   else {
+    val zeroFlag = Mux(cntOut < (io.windowCells + io.guardCells) || cntOut > (io.fftWin - io.windowCells - io.guardCells), true.B, false.B)
     val queueData = Module(new Queue((io.out.bits.cloneType), totalDelay + 1, flow = true))
     // val queueFftBin = Module(new Queue((cntOut.cloneType), totalDelay + 1, flow = true))
     io.in.ready := ~initialInDone || io.out.ready && ~flushingDelayed
@@ -384,8 +440,15 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
 
     if (params.sendCut)
       io.out.bits.cut.get := queueData.io.deq.bits.cut.get
-    io.out.bits.peak := queueData.io.deq.bits.peak
-    io.out.bits.threshold := queueData.io.deq.bits.threshold
+
+    if (params.edgesMode == Zero) {
+      io.out.bits.peak := Mux(zeroFlag, false.B, queueData.io.deq.bits.peak)
+      io.out.bits.threshold := Mux(zeroFlag, 0.U.asTypeOf(threshold), queueData.io.deq.bits.threshold)
+    }
+    else {
+      io.out.bits.peak := queueData.io.deq.bits.peak
+      io.out.bits.threshold := queueData.io.deq.bits.threshold
+    }
     io.out.valid := queueData.io.deq.valid
     io.fftBin := cntOut
   }
@@ -403,7 +466,8 @@ object CFARCoreWithASREApp extends App
     leadLaggWindowSize = 128,
     guardWindowSize = 4,
     includeCASH = true,
-    minSubWindowSize = Some(8)
+    minSubWindowSize = Some(8),
+    edgesMode = Cyclic
    // other parameters are default
   )
   

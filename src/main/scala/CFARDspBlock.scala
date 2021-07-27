@@ -144,7 +144,12 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
       commonFields = commonFields :+ RegField(log2Ceil(params.leadLaggWindowSize + 1), indexLead,
         RegFieldDesc(name = "indexLead", desc = "Defines index of the sorted cells inside leading window used for the threshold calculation"))
     }
-    //val detectedPeaksList = detectedPeaksListTmp.asUInt
+    if (params.edgesMode == AllEdgesMode) {
+      val edgesMode = RegInit(0.U(2.W)) // in the future maybe extended to 3.W!
+      commonFields = commonFields :+ RegField(2, edgesMode,
+        RegFieldDesc(name = "edgesMode", desc = "Defines calculating threshold mode"))
+      cfar.io.edgesMode.get :=  edgesMode
+    }
 
     if (params.sendCut) {
 //      require(cfar.io.out.bits.threshold.getWidth + cfar.io.out.bits.cut.get.getWidth + cfar.io.fftBin.getWidth + 1 < 48)

@@ -42,7 +42,7 @@ class CFARIO [T <: Data: Real](params: CFARParams[T]) extends Bundle {
   val windowCells = Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))
   val guardCells = Input(UInt(log2Ceil(params.guardWindowSize + 1).W))
   val subCells = if (params.includeCASH == true) Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None
-
+  val edgesMode = if (params.edgesMode == AllEdgeModes) Some(Input(UInt(2.W))) else None
   // Ordered statistic CFAR specific control registers
   val indexLead = if (params.CFARAlgorithm != CACFARType) Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None // Check here log2Ceil
   val indexLagg = if (params.CFARAlgorithm != CACFARType)  Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None

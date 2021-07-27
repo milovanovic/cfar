@@ -21,6 +21,13 @@ case object CACFARType  extends CFARType
 // Design supports both GOS and CA CFAR algorithm
 case object GOSCACFARType extends CFARType 
 
+sealed trait EdgeMode
+
+case object Cyclic extends EdgeMode
+case object NonCyclic extends EdgeMode
+case object Zero extends EdgeMode
+case object AllEdgeModes extends EdgeMode
+
 case class CFARParams[T <: Data: Real](
   protoIn               : T,                        // Data type of the input data
   protoThreshold        : T,                        // Data type of the threshold
@@ -36,8 +43,9 @@ case class CFARParams[T <: Data: Real](
   fftSize               : Int = 1024,               // maximum fft size
   retiming              : Boolean = false,          // just temporary parameter to test registers
   numAddPipes           : Int = 0,                  // number of add pipeline registers
-  numMulPipes           : Int = 0                   // number of mull pipeline registers
-  ) {
+  numMulPipes           : Int = 0,                  // number of mull pipeline registers
+  edgesMode             : EdgeMode = Cyclic         // defines edges handling method
+) {
   // requireIsPow2?
   require(isPow2(leadLaggWindowSize) & isPow2(fftSize))
   require(leadLaggWindowSize > 0 & guardWindowSize > 0)
