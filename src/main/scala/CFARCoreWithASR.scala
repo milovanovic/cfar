@@ -396,16 +396,9 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val isLocalMax = cutDelayed > leftNeighb && cutDelayed > rightNeighb
   val isPeak = cutDelayed  > threshold
 
-  if (params.numAddPipes == 0 && params.numMulPipes == 0) {
-    if (params.edgesMode == Zero) {
-      val zeroFlag = Mux(cntOut < (io.windowCells + io.guardCells) || cntOut > (io.fftWin - io.windowCells - io.guardCells), true.B, false.B)
-      io.out.bits.peak := Mux(zeroFlag, false.B, Mux(io.peakGrouping, isPeak && isLocalMax, isPeak))
-      io.out.bits.threshold := Mux(zeroFlag, 0.U.asTypeOf(threshold), threshold)
-    }
-    else {
-      io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
-      io.out.bits.threshold :=  threshold
-    }
+if (params.numAddPipes == 0 && params.numMulPipes == 0) {
+    io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
+    io.out.bits.threshold := threshold
     if (params.sendCut)
       io.out.bits.cut.get := cutDelayed
     io.in.ready := ~initialInDone || io.out.ready && ~flushing
@@ -440,15 +433,9 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
 
     if (params.sendCut)
       io.out.bits.cut.get := queueData.io.deq.bits.cut.get
+    io.out.bits.peak := queueData.io.deq.bits.peak
+    io.out.bits.threshold := queueData.io.deq.bits.threshold
 
-    if (params.edgesMode == Zero) {
-      io.out.bits.peak := Mux(zeroFlag, false.B, queueData.io.deq.bits.peak)
-      io.out.bits.threshold := Mux(zeroFlag, 0.U.asTypeOf(threshold), queueData.io.deq.bits.threshold)
-    }
-    else {
-      io.out.bits.peak := queueData.io.deq.bits.peak
-      io.out.bits.threshold := queueData.io.deq.bits.threshold
-    }
     io.out.valid := queueData.io.deq.valid
     io.fftBin := cntOut
   }
