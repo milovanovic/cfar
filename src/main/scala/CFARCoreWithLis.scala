@@ -38,13 +38,13 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
       proto = params.protoIn.cloneType,
       LIStype = "LIS_FIFO",
       LISsize = params.leadLaggWindowSize,
-      rtcSize = true, // use run time configurable lis size
+      rtcSize = true,  // use run time configurable lis size
       useSorterEmpty = true,
       useSorterFull = true,
       sortDir = false) // GOS uses descending sorting direction
  
   val laggWindow    = Module(new LinearSorter(lisParams))
-  laggWindow.io.in <> io.in // here check flushing also
+  laggWindow.io.in <> io.in
   laggWindow.io.lisSize.get := io.windowCells
   laggWindow.io.lastIn := io.lastIn
   val laggSortedData = laggWindow.io.sortedData
@@ -127,7 +127,6 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
       sumlagg := sumlagg + laggWindow.io.in.bits
     }
   }
- // dontTouch(sumlagg)
  
   when (lastCut) {
     sumlead := 0.U.asTypeOf(sumT)
@@ -207,16 +206,14 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
 //   })
 //   println(bpos.toString) // it uses binaryPoint growth
   val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, depthOfQueue, en = true.B)
-  
-  
-  // TODO: Change peakgrouping logic!
-  val leftNeighb  = ShiftRegister(Mux(io.guardCells === 0.U, laggWindow.io.sortedData.last, laggGuard.io.parallelOut.last), depthOfQueue, en = true.B)
-  val rightNeighb = ShiftRegister(Mux(io.guardCells === 0.U, leadWindow.io.sortedData.head, leadGuard.io.parallelOut.head), depthOfQueue, en = true.B)
+
+  // If peak grouping is enabled it is assumed that guard cells are not equal to zero because it is not possible to extract neighbours (parallel output of lis is sorted sequence)
+  val leftNeighb  = ShiftRegister(laggGuard.io.parallelOut(io.guardCells - 1.U), depthOfQueue, en = true.B)
+  val rightNeighb = ShiftRegister(leadGuard.io.parallelOut.head, depthOfQueue, en = true.B)
   val isLocalMax = cutDelayed > leftNeighb && cutDelayed > rightNeighb
   val isPeak = cutDelayed  > threshold
 
   if (params.numAddPipes == 0 && params.numMulPipes == 0) {
-    //io.out.bits.peak := cutDelayed > threshold
     io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
     if (params.sendCut)
       io.out.bits.cut.get := cutDelayed
@@ -228,7 +225,6 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   }
   else {
     val queueData = Module(new Queue((io.out.bits.cloneType), depthOfQueue + 1, flow = true))
-    //val queueFftBin = Module(new Queue((cntOut.cloneType), depthOfQueue + 1, flow = true))
     io.in.ready := ~initialInDone || io.out.ready && ~flushingDelayed
 
     queueData.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), depthOfQueue, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, depthOfQueue, en = true.B))
@@ -238,10 +234,6 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
     queueData.io.enq.bits.threshold := threshold
     queueData.io.enq.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
     queueData.io.deq.ready := io.out.ready
-
-//     queueFftBin.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), depthOfQueue, en = true.B)  || (flushingDelayed && ShiftRegister(io.out.ready, depthOfQueue, en = true.B))
-//     queueFftBin.io.enq.bits := cntOut
-//     queueFftBin.io.deq.ready := io.out.ready
 
     val queueLast = Module(new Queue(Bool(), depthOfQueue + 1, flow = true))
     queueLast.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), depthOfQueue, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, depthOfQueue, en = true.B))
