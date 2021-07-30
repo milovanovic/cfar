@@ -1,4 +1,5 @@
 
+
 Constant false alarm rate (CFAR) Chisel generator
 ======================================================
 
@@ -129,5 +130,9 @@ This repository provides simple tests which confirm the correct behaviour of the
 Tester functions such as `peek`, `poke` and `except`, available inside `DspTester` (check [dsptools Chisel library ](http://github.com/ucb-bar/dsptools)), are extensively used for design testing.
 
 ## TODO
+- Update documentation (CASH algorithm, edge handling methods)
+- Implement all edge handling methods for `CFARCoreWithMem` core  and `CFARCoreWithLis`core as well
+- Remove support for scala version 2.11
+- Check timing when register for  edge handling method configuration is enabled
 * Add more test cases
 * Attach plot diagrams
