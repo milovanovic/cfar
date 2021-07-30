@@ -132,9 +132,6 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
     maybeFullLead(numSumIndex) := leadWindow.io.cnt.get > (endIndex - 1.U)
     maybeFullLagg(numSumIndex) := laggWindow.io.cnt.get > (endIndex - 1.U)
     
-    dontTouch(leadWindow.cntIn)
-    leadWindow.cntIn.suggestName("TestCounterValue")
-    
     dontTouch(maybeFullLagg(numSumIndex))
     maybeFullLagg(numSumIndex).suggestName("maybeFullLagg")
     dontTouch(maybeFullLead(numSumIndex))
@@ -160,8 +157,6 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
           sumSubLaggs(numSumIndex) := sumSubLaggs(numSumIndex) + laggWindow.io.in.bits
         }
         else {
-          //when (maybeFullLagg) {
-          // this is added
           when (maybeFullLagg(numSumIndex-1)) {
             sumSubLaggs(numSumIndex) := sumSubLaggs(numSumIndex) + laggOutputVector(startIndex.U)
           }
@@ -312,10 +307,12 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val thrWithoutScaling = params.edgesMode match {
     case Cyclic  => if (params.retiming)
                       RegNext(Mux(ShiftRegister(laggWindow.io.regFull && leadWindow.io.regFull, 3, en = true.B),
-                        thrByModes, Mux(ShiftRegister(enableRightThr || !leadWindow.io.regFull, 3, en = true.B), 0.U.asTypeOf(sumT), thrByModes)))
+                        //thrByModes, Mux(ShiftRegister(enableRightThr || !leadWindow.io.regFull, 3, en = true.B), 0.U.asTypeOf(sumT), thrByModes)))
+                        thrByModes, Mux(ShiftRegister(enableRightThr || !leadWindow.io.regFull, 3, en = true.B), Mux(enableRightThr, rightThr, leftThr), thrByModes)))
                     else
                        Mux(laggWindow.io.regFull && leadWindow.io.regFull,
-                         thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))
+                         //thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))
+                         thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, Mux(enableRightThr, rightThr, leftThr), thrByModes))
     case _  =>
       val leftFlag  = WireDefault(false.B)
       val rightFlag = WireDefault(false.B)
@@ -353,10 +350,13 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
 
       val cyclicThrNoScaling = if (params.retiming)
                                 RegNext(Mux(ShiftRegister(laggWindow.io.regFull && leadWindow.io.regFull, 3, en = true.B),
-                                  thrByModes, Mux(ShiftRegister(enableRightThr || !leadWindow.io.regFull, 3, en = true.B), 0.U.asTypeOf(sumT), thrByModes)))
+                                  //thrByModes, Mux(ShiftRegister(enableRightThr || !leadWindow.io.regFull, 3, en = true.B), 0.U.asTypeOf(sumT), thrByModes)))
+                                  thrByModes, Mux(ShiftRegister(enableRightThr || !leadWindow.io.regFull, 3, en = true.B), leftThr, thrByModes)))
                                else
                                 Mux(laggWindow.io.regFull && leadWindow.io.regFull,
-                                  thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))
+                                  //thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, 0.U.asTypeOf(sumT), thrByModes))
+                                  thrByModes, Mux(enableRightThr || !leadWindow.io.regFull, leftThr, thrByModes))
+
 
       val nonCyclicThrNoScaling = if (params.retiming)
                                     RegNext(Mux(leftFlagShift, leftThr, Mux(rightFlagShift, rightThr, thrByModes)))
@@ -391,13 +391,20 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, totalDelay, en = true.B)
   //ShiftRegister(cellUnderTest.io.out.bits, thresholdPip, en = cellUnderTest.io.out.fire() || (flushing && io.out.ready))
   
-  val leftNeighb  = ShiftRegister(Mux(io.guardCells === 0.U, laggWindow.io.parallelOut.last, laggGuard.io.parallelOut.last), totalDelay, en = true.B)
+  val leftNeighb  = ShiftRegister(Mux(io.guardCells === 0.U, laggWindow.io.parallelOut(io.windowCells - 1.U), laggGuard.io.parallelOut(io.guardCells - 1.U)), totalDelay, en = true.B)
   val rightNeighb = ShiftRegister(Mux(io.guardCells === 0.U, leadWindow.io.parallelOut.head, leadGuard.io.parallelOut.head), totalDelay, en = true.B)
   val isLocalMax = cutDelayed > leftNeighb && cutDelayed > rightNeighb
   val isPeak = cutDelayed  > threshold
 
-if (params.numAddPipes == 0 && params.numMulPipes == 0) {
-    io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
+
+  if (params.numAddPipes == 0 && params.numMulPipes == 0) {
+    if (params.edgesMode == Zero) {
+      val zeroFlag = Mux(cntOut < (io.windowCells + io.guardCells) || cntOut > (io.fftWin - io.windowCells - io.guardCells - 1.U), true.B, false.B)
+      io.out.bits.peak := Mux(zeroFlag, false.B, Mux(io.peakGrouping, isPeak && isLocalMax, isPeak))
+    }
+    else {
+      io.out.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
+    }
     io.out.bits.threshold := threshold
     if (params.sendCut)
       io.out.bits.cut.get := cutDelayed
@@ -407,22 +414,22 @@ if (params.numAddPipes == 0 && params.numMulPipes == 0) {
     io.fftBin := cntOut
   }
   else {
-    val zeroFlag = Mux(cntOut < (io.windowCells + io.guardCells) || cntOut > (io.fftWin - io.windowCells - io.guardCells), true.B, false.B)
     val queueData = Module(new Queue((io.out.bits.cloneType), totalDelay + 1, flow = true))
-    // val queueFftBin = Module(new Queue((cntOut.cloneType), totalDelay + 1, flow = true))
     io.in.ready := ~initialInDone || io.out.ready && ~flushingDelayed
-
     queueData.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), totalDelay, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, totalDelay, en = true.B))
 
     if (params.sendCut)
       queueData.io.enq.bits.cut.get := cutDelayed
     queueData.io.enq.bits.threshold := threshold
-    queueData.io.enq.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
-    queueData.io.deq.ready := io.out.ready
 
-//     queueFftBin.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), totalDelay, en = true.B)  || (flushingDelayed && ShiftRegister(io.out.ready, totalDelay, en = true.B))
-//     queueFftBin.io.enq.bits := cntOut
-//     queueFftBin.io.deq.ready := io.out.ready
+    if (params.edgesMode == Zero) {
+      val zeroFlag = Mux(cntOut < (io.windowCells + io.guardCells) || cntOut > (io.fftWin - io.windowCells - io.guardCells - 1.U), true.B, false.B)
+      queueData.io.enq.bits.peak := Mux(zeroFlag, false.B, Mux(io.peakGrouping, isPeak && isLocalMax, isPeak))
+    }
+    else {
+      queueData.io.enq.bits.peak := Mux(io.peakGrouping, isPeak && isLocalMax, isPeak)
+    }
+    queueData.io.deq.ready := io.out.ready
 
     val queueLast = Module(new Queue(Bool(), totalDelay + 1, flow = true))
     queueLast.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), totalDelay, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, totalDelay, en = true.B))
