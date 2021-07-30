@@ -192,10 +192,9 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
         thrWithoutScaling context_+ io.thresholdScaler
       }
 
-  // val cutDelayed = if (depthOfQueue != 0)  ShiftRegister(cellUnderTest.io.out.bits, depthOfQueue, en = true.B) else cellUnderTest.io.out.bits
   val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, depthOfQueue, en = true.B)
-
-  val leftNeighb  = ShiftRegister(laggGuard.io.parallelOut.last, depthOfQueue, en = true.B)
+  // Important: it is assumed that guard window can not be configured to be zero
+  val leftNeighb  = ShiftRegister(laggGuard.io.parallelOut(io.guardCells - 1.U), depthOfQueue, en = true.B)
   val rightNeighb = ShiftRegister(laggGuard.io.parallelOut.head, depthOfQueue, en = true.B)
   val isLocalMax = cutDelayed > leftNeighb && cutDelayed > rightNeighb
   val isPeak = cutDelayed  > threshold
