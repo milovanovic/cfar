@@ -142,14 +142,16 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
     }
   }
   
-  val leftThr  = Mux(io.cfarAlgorithm.getOrElse(1.U) === 1.U,
+  val leftThr  = laggSortedData(io.indexLagg.get - 1.U)
+  /*val leftThr  = Mux(io.cfarAlgorithm.getOrElse(1.U) === 1.U,
                    laggSortedData(io.indexLagg.get - 1.U),
-                   BinaryRepresentation[T].shr(sumlagg, io.divSum.get))
+                   BinaryRepresentation[T].shr(sumlagg, io.divSum.get))*/
+  val rightThr = leadSortedData(io.indexLead.get - 1.U)
 
   // if cfarAlgorithm input is not available then this CFAR is GOSCFARType
-  val rightThr = Mux(io.cfarAlgorithm.getOrElse(1.U) === 1.U,
+  /*val rightThr = Mux(io.cfarAlgorithm.getOrElse(1.U) === 1.U,
                    leadSortedData(io.indexLead.get - 1.U),
-                   BinaryRepresentation[T].shr(sumlead, io.divSum.get)) // this will make a lot of Muxes
+                   BinaryRepresentation[T].shr(sumlead, io.divSum.get))*/ // this will make a lot of Muxes
 
   val greatestOf = Mux(leftThr > rightThr, leftThr, rightThr)
   val smallestOf = Mux(leftThr < rightThr, leftThr, rightThr)
@@ -257,7 +259,10 @@ object CFARCoreWithLisApp extends App
   val params: CFARParams[FixedPoint] =  CFARParams(
     protoIn = FixedPoint(16.W, 8.BP),
     protoThreshold = FixedPoint(16.W, 8.BP),
-    protoScaler = FixedPoint(16.W, 8.BP)
+    protoScaler = FixedPoint(16.W, 8.BP),
+    leadLaggWindowSize = 32,
+    guardWindowSize = 4,
+    sendCut = true
    // other parameters are default
   )
   chisel3.Driver.execute(args,()=>new CFARCoreWithLis(params))
