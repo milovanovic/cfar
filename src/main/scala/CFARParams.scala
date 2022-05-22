@@ -44,7 +44,7 @@ case class CFARParams[T <: Data: Real](
   retiming              : Boolean = false,          // just temporary parameter to test registers
   numAddPipes           : Int = 0,                  // number of add pipeline registers
   numMulPipes           : Int = 0,                  // number of mull pipeline registers
-  edgesMode             : EdgeMode = Cyclic         // defines edges handling method
+  edgesMode             : EdgeMode = Zero           // defines edges handling method
 ) {
   // requireIsPow2?
   require(isPow2(leadLaggWindowSize) & isPow2(fftSize))
