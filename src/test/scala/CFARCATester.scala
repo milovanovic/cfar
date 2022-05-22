@@ -89,14 +89,22 @@ class CFARCATester[T <: Data](dut: CFARCore[T],
            refCells = lWinSize
           // poke(dut.io.subCells.get, subWindowSize)
         }
-        println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize and subWindowSize = $subWindowSize")
+        if (dut.params.includeCASH && cfarMode == "CASH") {
+          println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize and subWindowSize = $subWindowSize")
+        }
+        else {
+          println(s"Testing CFAR core with lWinSize = $lWinSize and guardSize = $guardSize")
+        }
 
-        val considerEdges = if (dut.params.includeCASH == true) false else true
+        //val considerEdges = if (dut.params.includeCASH == true) false else true
         val (expThr, expPeaks) = if (dut.params.includeCASH && cfarMode == "CASH")
                                     CFARUtils.cfarCASH(in, referenceCells = refCells, subCells = subWindowSize, scalingFactor = thrFactor, plotEn = thrPlot)
-                                 else
-                                    CFARUtils.cfarCA(in, cfarMode = cfarMode, referenceCells = lWinSize, guardCells = guardSize, considerEdges = considerEdges, scalingFactor = thrFactor, plotEn = thrPlot)
-
+                                 else if (dut.params.includeCASH == true) {
+                                    CFARUtils.cfarCA(in, cfarMode = cfarMode, referenceCells = lWinSize, guardCells = guardSize, considerEdges = false, scalingFactor = thrFactor, plotEn = thrPlot)
+                                 }
+                                 else {
+                                    CFARUtils.cfarCA(in, cfarMode = cfarMode, referenceCells = lWinSize, guardCells = guardSize, considerEdges = true, scalingFactor = thrFactor, plotEn = thrPlot)
+                                 }
         if (cfarModeNum == 3) {
           poke(dut.io.guardCells, 0)
         }
