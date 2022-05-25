@@ -90,7 +90,7 @@ class CFARCoreWithMem[T <: Data : Real : BinaryRepresentation](val params: CFARP
   
   val fftBinOnOutput = cntOut
  
-  when (io.lastIn) {
+  when (io.lastIn && io.in.valid) {
     flushing := true.B
   }
   val flushingDelayed = ShiftRegisterWithReset(in = flushing,
