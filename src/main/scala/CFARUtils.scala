@@ -502,7 +502,7 @@ class ShiftRegisterMemStream[T <: Data](val proto: T, val maxDepth: Int, val enI
     val memEmpty = Output(Bool())
   })
   
-  val mem           = SyncReadMem(maxDepth, proto)
+  val mem           = Mem(maxDepth, proto)
   val readIdx       = Wire(UInt(log2Ceil(maxDepth).W))
   //val readIdxReg    = RegInit(0.U(log2Ceil(maxDepth).W) - (maxDepth - 1).U)
   val writeIdxReg   = RegInit(0.U(log2Ceil(maxDepth).W))
@@ -548,7 +548,7 @@ class ShiftRegisterMemStream[T <: Data](val proto: T, val maxDepth: Int, val enI
   
   val outputQueue = Module(new Queue(proto, 1, pipe=true, flow=true))
   outputQueue.io.enq.valid := validPrev
-  outputQueue.io.enq.bits := mem.read(readIdx)
+  outputQueue.io.enq.bits := RegNext(mem.read(readIdx), 0.U.asTypeOf(proto))
   outputQueue.io.deq.ready := io.in.fire() || (last && io.out.ready) // Check  this!
   
   io.memEmpty  := writeIdxReg === 0.U && ~initialInDone
