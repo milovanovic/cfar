@@ -259,6 +259,6 @@ object CFARCoreWithMemApp extends App
     CFARAlgorithm = CACFARType
   )
   
-  chisel3.Driver.execute(args,()=>new CFARCoreWithMem(params))
+  (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(() => new CFARCoreWithMem(params))))
 }
 

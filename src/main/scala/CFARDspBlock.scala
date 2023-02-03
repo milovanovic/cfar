@@ -12,6 +12,8 @@ import freechips.rocketchip.amba.axi4stream._
 import freechips.rocketchip.config._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.regmapper._
+import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
+
 
 
 trait AXI4CFARStandaloneBlock extends AXI4CFARBlock[FixedPoint] {
@@ -63,7 +65,7 @@ abstract class CFARBlock [T <: Data : Real: BinaryRepresentation, D, U, E, O, B 
     val (in, edgeIn) = slaveNode.in.head
     val (out, edgeOut) = masterNode.out.head
 
-    val cfar = Module(new CFARCore(params))
+    val cfar = Module(new CFARCore(params) with HasIO)
 
     // control registers
     val thresholdScalerWidth = params.protoScaler.getWidth
@@ -175,7 +177,7 @@ class AXI4CFARBlock[T <: Data : Real: BinaryRepresentation](params: CFARParams[T
   val mem = Some(AXI4RegisterNode(address = address, beatBytes = _beatBytes)) // use AXI4 memory mapped
 }
 
-object CFARDspBlock extends App
+/*object CFARDspBlock extends App
 {
   val paramsCFAR = CFARParams(
     protoIn = FixedPoint(16.W, 0.BP),
@@ -193,9 +195,10 @@ object CFARDspBlock extends App
 
   val baseAddress = 0x500
   implicit val p: Parameters = Parameters.empty
-  val cfarModule = LazyModule(new AXI4CFARBlock(paramsCFAR, AddressSet(baseAddress + 0x100, 0xFF), _beatBytes = 4) with dspblocks.AXI4StandaloneBlock {
+
+  val lazyModule = LazyModule(new AXI4CFARBlock(paramsCFAR, AddressSet(baseAddress + 0x100, 0xFF), _beatBytes = 4) with AXI4StandaloneBlock {
     override def standaloneParams = AXI4BundleParameters(addrBits = 32, dataBits = 32, idBits = 1)
   })
 
-  chisel3.Driver.execute(args, ()=> cfarModule.module)
-}
+  (new ChiselStage).execute(Array("--target-dir", "verilog/CFARDspBlock"), Seq(ChiselGeneratorAnnotation(() => new lazyModule.module)))
+}*/

@@ -12,7 +12,7 @@ import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 // Implements CFAR core that can support cell averaging (CA), greatest of (GO), smallest of CFAR (SO)
 // Leading/lagging windows are implemented via shift-registers
 
-class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T]) extends Module {
+class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T]) extends Module with HasIO {
   require(params.CFARAlgorithm == CACFARType)
   require(params.includeCASH == true)
 
@@ -464,6 +464,6 @@ object CFARCoreWithASREApp extends App
     edgesMode = Cyclic
    // other parameters are default
   )
-  
-  chisel3.Driver.execute(args,()=>new CFARCoreWithASR(params))
+
+  (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(() => new CFARCoreWithASR(params))))
 }

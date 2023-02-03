@@ -10,6 +10,11 @@ import dsptools.numbers._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import chisel3.internal.requireIsHardware
 
+
+abstract trait HasIO extends Module {
+  val io: Bundle
+}
+
 class CFAROutFields [T <: Data: Real] (protoIn: T, protoThreshold: T, sendCut: Boolean) extends Bundle {
   requireIsChiselType(protoIn)
   requireIsChiselType(protoThreshold)
@@ -18,7 +23,7 @@ class CFAROutFields [T <: Data: Real] (protoIn: T, protoThreshold: T, sendCut: B
   val cut            = if (sendCut) Some(Output(protoIn)) else None        // cell under test
   val threshold      = Output(protoThreshold) // threshold
   
-  override def cloneType: this.type = new CFAROutFields(protoIn, protoThreshold, sendCut).asInstanceOf[this.type] // must have cloneType
+  //override def cloneType: this.type = new CFAROutFields(protoIn, protoThreshold, sendCut).asInstanceOf[this.type] // must have cloneType
 }
 
 // object CFAROutFields {
@@ -52,16 +57,16 @@ class CFARIO [T <: Data: Real](params: CFARParams[T]) extends Bundle {
   // can be moved to CFAROutFields
   val fftBin  = Output(UInt(log2Ceil(params.fftSize).W))
  
-  override def cloneType: this.type = CFARIO(params).asInstanceOf[this.type]
+//  override def cloneType: this.type = CFARIO(params).asInstanceOf[this.type]
 }
 
 object CFARIO {
   def apply[T <: Data: Real](params: CFARParams[T]): CFARIO[T] = new CFARIO(params)
 }
 
-class CFARCore[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T]) extends Module {
+class CFARCore[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T]) extends Module with HasIO {
   val io = IO(CFARIO(params))
-  val cfarCore = if (params.CFARAlgorithm == CACFARType && params.includeCASH == true) Module(new CFARCoreWithASR(params)) else if (params.CFARAlgorithm == CACFARType && params.includeCASH == false) Module(new CFARCoreWithMem(params)) else Module(new CFARCoreWithLis(params))
+  val cfarCore = if (params.CFARAlgorithm == CACFARType && params.includeCASH == true) Module(new CFARCoreWithASR(params) with HasIO) else if (params.CFARAlgorithm == CACFARType && params.includeCASH == false) Module(new CFARCoreWithMem(params) with HasIO) else Module(new CFARCoreWithLis(params) with HasIO)
 
   // just instatiate appropriate design
   
@@ -108,7 +113,7 @@ object CFARCoreApp extends App
    // other parameters are default
   )
   
-  chisel3.Driver.execute(args,()=>new CFARCore(params))
+  (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(() => new CFARCore(params))))
 }
 
 

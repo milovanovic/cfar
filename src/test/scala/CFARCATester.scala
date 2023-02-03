@@ -16,9 +16,6 @@ import breeze.plot._
 import breeze.linalg._
 import breeze.math.Complex
 import breeze.signal.{fourierTr, iFourierTr}
-//import scala.util.control.Breaks._
-
-import org.scalatest.{FlatSpec, Matchers}
 
 // test CA and CASH algorithm
 class CFARCATester[T <: Data](dut: CFARCore[T],

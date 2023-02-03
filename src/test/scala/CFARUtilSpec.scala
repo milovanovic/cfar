@@ -6,7 +6,8 @@ import chisel3.experimental._
 import dsptools._
 import dsptools.numbers._
 
-import org.scalatest.{FlatSpec, Matchers}
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
 import scala.util.Random
 
 
@@ -260,7 +261,7 @@ object ShiftRegMemTester {
 }*/
 
 
-class CFARUtilSpec extends FlatSpec with Matchers {
+class CFARUtilSpec extends AnyFlatSpec with Matchers {
 
   behavior of "AdjustableShiftRegisterStream"
   

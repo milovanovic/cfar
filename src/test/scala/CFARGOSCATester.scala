@@ -17,8 +17,6 @@ import breeze.linalg._
 import breeze.math.Complex
 import breeze.signal.{fourierTr, iFourierTr}
 
-import org.scalatest.{FlatSpec, Matchers}
-
 class CFARGOSCATester[T <: Data](dut: CFARCore[T],
                                       in: Seq[Double],
                                       thrFactor: Double,

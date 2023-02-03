@@ -7,7 +7,9 @@ import chisel3.util.log2Up
 import dsptools._
 import dsptools.numbers._
 
-import org.scalatest.{FlatSpec, Matchers}
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
+
 import scala.util.Random
 import scala.math.pow
 
@@ -65,7 +67,7 @@ object MinimumCircuitTester {
   }
 }
 
-class MinimumCircuitSpec extends FlatSpec with Matchers {
+class MinimumCircuitSpec extends AnyFlatSpec with Matchers {
   
   // FixedPoint
   for (size <- Seq(2, 4, 8, 16, 32)) {

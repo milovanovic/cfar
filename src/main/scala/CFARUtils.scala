@@ -3,6 +3,7 @@ package cfar
 import chisel3._
 import chisel3.util._
 import chisel3.internal.{requireIsChiselType, requireIsHardware}
+import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 
 import breeze.linalg._
 import breeze.plot._
@@ -485,7 +486,7 @@ class CellUnderTest[T <: Data](val proto: T) extends Module {
 
 object AdjShiftApp extends App
 {
-  chisel3.Driver.execute(args,()=>new AdjustableShiftRegisterStream(UInt(16.W), 6))
+  (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(() => new AdjustableShiftRegisterStream(UInt(16.W), 6))))
 }
 
 class ShiftRegisterMemStream[T <: Data](val proto: T, val maxDepth: Int, val enInitStore: Boolean = true) extends Module {
@@ -570,5 +571,6 @@ class ShiftRegisterMemStream[T <: Data](val proto: T, val maxDepth: Int, val enI
 
 object ShiftRegMemApp extends App
 {
-  chisel3.Driver.execute(args,()=>new ShiftRegisterMemStream(UInt(16.W), 6))
+ // chisel3.Driver.execute(args,()=>new ShiftRegisterMemStream(UInt(16.W), 6))
+ (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(() => new ShiftRegisterMemStream(UInt(16.W), 6))))
 }

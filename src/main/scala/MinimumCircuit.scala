@@ -78,7 +78,9 @@ class MinimumCircuit[T <: Data: Real](val protoIn: T, val n: Int = 16, val runTi
 object MinimumCircuitApp extends App
 {
   //chisel3.Driver.execute(args,()=>new MinimumCircuit(FixedPoint(16.W, 14.BP))) // replace with ChiselStage
-  chisel3.Driver.execute(args,()=>new MinimumCircuit(FixedPoint(16.W, 14.BP), runTime = false)) // replace with ChiselStage
+  //chisel3.Driver.execute(args,()=>new MinimumCircuit(FixedPoint(16.W, 14.BP), runTime = false)) // replace with ChiselStage
+  (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(() => new MinimumCircuit(FixedPoint(16.W, 14.BP), runTime = false))))
+
 }
 
 

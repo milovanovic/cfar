@@ -7,9 +7,10 @@ import chisel3.experimental._
 import dsptools._
 import dsptools.numbers._
 
-import org.scalatest.{FlatSpec, Matchers}
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
 
-class CFARFinalSpec extends FlatSpec with Matchers {
+class CFARFinalSpec extends AnyFlatSpec with Matchers {
 
   val fftSize = 512
   val thrPlot = false

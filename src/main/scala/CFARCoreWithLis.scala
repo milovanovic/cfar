@@ -10,7 +10,7 @@ import dsptools.numbers._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 
 // core for GOSCACFARType and GOSCFARType
-class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T]) extends Module {
+class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T]) extends Module with HasIO {
   require(params.CFARAlgorithm != CACFARType)
   val io = IO(CFARIO(params))
   val lastCut = RegInit(false.B)
@@ -265,5 +265,5 @@ object CFARCoreWithLisApp extends App
     sendCut = true
    // other parameters are default
   )
-  chisel3.Driver.execute(args,()=>new CFARCoreWithLis(params))
+  (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(() => new CFARCoreWithLis(params))))
 }
