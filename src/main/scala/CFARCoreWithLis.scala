@@ -74,22 +74,22 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   val leadSortedData = leadWindow.io.sortedData
   
 
-  when (io.in.fire()) {
+  when (io.in.fire) {
     cntIn := cntIn + 1.U
   }
   
-  when (cntIn === (latency - 1.U) && io.in.fire()) {
+  when (cntIn === (latency - 1.U) && io.in.fire) {
     initialInDone := true.B
   }
   
-  when (io.lastOut && io.out.fire()) {
+  when (io.lastOut && io.out.fire) {
     cntIn := 0.U
   }
   
-  when (io.out.fire()) {
+  when (io.out.fire) {
     cntOut := cntOut + 1.U
   }
-  when (cntOut === (io.fftWin - 1.U) && io.out.fire() || (io.lastOut && io.out.fire)) {
+  when (cntOut === (io.fftWin - 1.U) && io.out.fire || (io.lastOut && io.out.fire)) {
     cntOut := 0.U
   }
 
@@ -117,9 +117,9 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   when (io.lastOut) {
     sumlagg := 0.U.asTypeOf(sumT)
   }
-  .elsewhen (io.in.fire()) {
+  .elsewhen (io.in.fire) {
     when (laggWindow.io.sorterFull.get) {
-      when (laggWindow.io.out.fire()) {
+      when (laggWindow.io.out.fire) {
         sumlagg := sumlagg + laggWindow.io.in.bits - laggWindow.io.out.bits
       }
     }
@@ -131,9 +131,9 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   when (lastCut) {
     sumlead := 0.U.asTypeOf(sumT)
   }
-  .elsewhen (leadWindow.io.in.fire()) {
+  .elsewhen (leadWindow.io.in.fire) {
     when (leadWindow.io.sorterFull.get) {
-      when (leadWindow.io.out.fire()) {
+      when (leadWindow.io.out.fire) {
         sumlead := sumlead + leadWindow.io.in.bits - leadWindow.io.out.bits
       }
     }
@@ -170,7 +170,7 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
                                 thrByModes)))*/
   // when considerEdges = false
   val enableRightThr = RegInit(false.B)
-  when (!(laggWindow.io.sorterFull.get) && laggWindow.io.out.fire()) {
+  when (!(laggWindow.io.sorterFull.get) && laggWindow.io.out.fire) {
     enableRightThr := true.B
   }
   when (io.lastOut) {
@@ -221,7 +221,7 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
       io.out.bits.cut.get := cutDelayed
     io.in.ready := ~initialInDone || io.out.ready && ~flushing
     io.out.bits.threshold :=  threshold
-    io.out.valid := initialInDone && io.in.fire() || flushing
+    io.out.valid := initialInDone && io.in.fire || flushing
     io.fftBin := cntOut //fftBinOnOutput
     io.lastOut := cellUnderTest.io.lastOut
   }
@@ -229,7 +229,7 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
     val queueData = Module(new Queue((io.out.bits.cloneType), depthOfQueue + 1, flow = true))
     io.in.ready := ~initialInDone || io.out.ready && ~flushingDelayed
 
-    queueData.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), depthOfQueue, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, depthOfQueue, en = true.B))
+    queueData.io.enq.valid := ShiftRegister(initialInDone && io.in.fire, depthOfQueue, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, depthOfQueue, en = true.B))
     
     if (params.sendCut)
       queueData.io.enq.bits.cut.get := cutDelayed
@@ -238,7 +238,7 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
     queueData.io.deq.ready := io.out.ready
 
     val queueLast = Module(new Queue(Bool(), depthOfQueue + 1, flow = true))
-    queueLast.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), depthOfQueue, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, depthOfQueue, en = true.B))
+    queueLast.io.enq.valid := ShiftRegister(initialInDone && io.in.fire, depthOfQueue, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, depthOfQueue, en = true.B))
     queueLast.io.enq.bits := lastOut
     
     queueLast.io.deq.ready := io.out.ready

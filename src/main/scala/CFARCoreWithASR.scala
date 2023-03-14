@@ -143,7 +143,7 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
     when (io.lastOut) {
       sumSubLaggs(numSumIndex) := 0.U.asTypeOf(sumT)
     }
-    .elsewhen (io.in.fire()) {
+    .elsewhen (io.in.fire) {
       when (laggWindow.io.regFull || maybeFullLagg(numSumIndex)) {
         if (numSumIndex == 0) {
           sumSubLaggs(numSumIndex) := sumSubLaggs(numSumIndex) + laggWindow.io.in.bits - minusOpLagg
@@ -167,8 +167,8 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
     when (io.lastOut) {
       sumSubLeads(numSumIndex) := 0.U.asTypeOf(sumT)
     }
-    .elsewhen (leadWindow.io.in.fire() && cellUnderTest.io.out.fire()) {
-    //.elsewhen (leadWindow.io.in.fire()) {
+    .elsewhen (leadWindow.io.in.fire && cellUnderTest.io.out.fire) {
+    //.elsewhen (leadWindow.io.in.fire) {
       when (leadWindow.io.regFull || maybeFullLead(numSumIndex)) {
         if (numSumIndex == 0) {
           sumSubLeads(numSumIndex) := sumSubLeads(numSumIndex) + leadWindow.io.in.bits - minusOpLead
@@ -212,20 +212,20 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
   dontTouch(min)
   min.suggestName("clutterRepr")
 
-  when (io.in.fire()) {
+  when (io.in.fire) {
     cntIn := cntIn + 1.U
   }
-  when (cntIn === (latency - 1.U) && io.in.fire()) {
+  when (cntIn === (latency - 1.U) && io.in.fire) {
     initialInDone := true.B
   }
  
-  when (io.lastOut && io.out.fire()) {
+  when (io.lastOut && io.out.fire) {
     cntIn := 0.U
   }
-  when (io.out.fire()) {
+  when (io.out.fire) {
     cntOut := cntOut + 1.U
   }
-  when (cntOut === (io.fftWin - 1.U) && io.out.fire() || (io.lastOut && io.out.fire)) {
+  when (cntOut === (io.fftWin - 1.U) && io.out.fire || (io.lastOut && io.out.fire)) {
     cntOut := 0.U
   }
 
@@ -252,9 +252,9 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
 //   when (io.lastOut) {
 //     sumlagg := 0.U.asTypeOf(sumT)
 //   }
-//   .elsewhen (io.in.fire()) {
+//   .elsewhen (io.in.fire) {
 //     when (laggWindow.io.regFull) {
-//       when (laggWindow.io.out.fire()) {
+//       when (laggWindow.io.out.fire) {
 //         sumlagg := sumlagg + laggWindow.io.in.bits - laggWindow.io.out.bits
 //       }
 //     }
@@ -267,9 +267,9 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
 //   when (lastCut) {
 //     sumlead := 0.U.asTypeOf(sumT)
 //   }
-//   .elsewhen (leadWindow.io.in.fire()) {
+//   .elsewhen (leadWindow.io.in.fire) {
 //     when (leadWindow.io.regFull) {
-//       when (leadWindow.io.out.fire()) {
+//       when (leadWindow.io.out.fire) {
 //         sumlead := sumlead + leadWindow.io.in.bits - leadWindow.io.out.bits
 //       }
 //     }
@@ -297,7 +297,7 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
                               3.U -> min))
 
   val enableRightThr = RegInit(false.B)
-  when (!(laggWindow.io.regFull) && laggWindow.io.out.fire()) {
+  when (!(laggWindow.io.regFull) && laggWindow.io.out.fire) {
     enableRightThr := true.B
   }
   when (io.lastOut) {
@@ -318,10 +318,10 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
       val rightFlag = WireDefault(false.B)
       val cntCutOut = RegInit(0.U(log2Ceil(params.fftSize).W))
 
-      when (cellUnderTest.io.out.fire()) {
+      when (cellUnderTest.io.out.fire) {
         cntCutOut := cntCutOut + 1.U
       }
-      when (cntCutOut === (io.fftWin - 1.U) && cellUnderTest.io.out.fire()) {
+      when (cntCutOut === (io.fftWin - 1.U) && cellUnderTest.io.out.fire) {
         cntCutOut := 0.U
       }
 
@@ -389,7 +389,7 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
       }
   
   val cutDelayed = ShiftRegister(cellUnderTest.io.out.bits, totalDelay, en = true.B)
-  //ShiftRegister(cellUnderTest.io.out.bits, thresholdPip, en = cellUnderTest.io.out.fire() || (flushing && io.out.ready))
+  //ShiftRegister(cellUnderTest.io.out.bits, thresholdPip, en = cellUnderTest.io.out.fire || (flushing && io.out.ready))
   
   val leftNeighb  = ShiftRegister(Mux(io.guardCells === 0.U, laggWindow.io.parallelOut(io.windowCells - 1.U), laggGuard.io.parallelOut(io.guardCells - 1.U)), totalDelay, en = true.B)
   val rightNeighb = ShiftRegister(Mux(io.guardCells === 0.U, leadWindow.io.parallelOut.head, leadGuard.io.parallelOut.head), totalDelay, en = true.B)
@@ -409,14 +409,14 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
     if (params.sendCut)
       io.out.bits.cut.get := cutDelayed
     io.in.ready := ~initialInDone || io.out.ready && ~flushing
-    io.out.valid := initialInDone && io.in.fire() || flushing
+    io.out.valid := initialInDone && io.in.fire || flushing
     io.lastOut := lastOut
     io.fftBin := cntOut
   }
   else {
     val queueData = Module(new Queue((io.out.bits.cloneType), totalDelay + 1, flow = true))
     io.in.ready := ~initialInDone || io.out.ready && ~flushingDelayed
-    queueData.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), totalDelay, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, totalDelay, en = true.B))
+    queueData.io.enq.valid := ShiftRegister(initialInDone && io.in.fire, totalDelay, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, totalDelay, en = true.B))
 
     if (params.sendCut)
       queueData.io.enq.bits.cut.get := cutDelayed
@@ -432,7 +432,7 @@ class CFARCoreWithASR[T <: Data : Real : BinaryRepresentation](val params: CFARP
     queueData.io.deq.ready := io.out.ready
 
     val queueLast = Module(new Queue(Bool(), totalDelay + 1, flow = true))
-    queueLast.io.enq.valid := ShiftRegister(initialInDone && io.in.fire(), totalDelay, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, totalDelay, en = true.B))
+    queueLast.io.enq.valid := ShiftRegister(initialInDone && io.in.fire, totalDelay, en = true.B) || (flushingDelayed && ShiftRegister(io.out.ready, totalDelay, en = true.B))
     queueLast.io.enq.bits := lastOut
 
     queueLast.io.deq.ready := io.out.ready

@@ -59,7 +59,7 @@ class MinimumCircuit[T <: Data: Real](val protoIn: T, val n: Int = 16, val runTi
           io.out := io.in(0)
       }
       .otherwise {
-        io.out := minFinal
+              io.out := minFinal
       }
     }
     else {
