@@ -195,7 +195,97 @@ object CFARUtils {
 
     (threshold, peakIndices)
   }
-  
+  // function that should follow lis-fifo-sr processing scheme
+  def cfarOSlis(signal: Seq[Double], referenceCells: Int, scalingFactor: Double, logMode: Boolean = false, k: Int = 2, plotEn: Boolean = false): (Seq[Double], Seq[Int]) = {
+    val totalCells = signal.size
+    val windowCells = referenceCells
+    var threshold : Seq[Double] = Seq()
+    var peakIndices: Seq[Int] = Seq()
+
+    for (ix <- referenceCells until (totalCells - referenceCells)) {
+      val lead = signal.slice(ix - referenceCells, ix)
+      val lagg = signal.slice(ix, ix + referenceCells + 1) // includes cell under test as well
+
+      val thrSorted = signal.slice(ix - referenceCells, ix + referenceCells + 1). sorted
+      //println("Size of thrSorted is:")
+      //println(thrSorted.toString)
+      var thr = thrSorted(k-1) // k is normally set to be equal to 1.5*referenceCells
+      if (signal(ix) == thr) {
+        thr =  thrSorted(k)
+      }
+
+      val scaledThr = if (logMode) thr + scalingFactor else thr * scalingFactor
+      if (scaledThr < signal(ix)) peakIndices = peakIndices :+ ix
+      threshold = threshold :+ scaledThr
+      if (scaledThr < signal(ix)) peakIndices = peakIndices :+ ix
+    }
+    if (plotEn == true) {
+      val f = Figure()
+      val p = f.subplot(0)
+      p.legend_=(true)
+      val xaxis = (0 until signal.size).map(e => e.toDouble).toSeq.toArray
+      p.xlabel = "Frequency bin"
+      p.ylabel = "Amplitude"
+
+      val thresholdPlot = threshold.toSeq
+
+      p += plot(xaxis, signal.toArray, name = "FFT input Signal")
+      p += plot(xaxis, threshold.toArray, name = "CFAR threshold") //'.'
+      p.title_=(s"Constant False Alarm Rate OS")
+
+      f.saveas(s"test_run_dir/CFAR_OS_Scala_Threshold_Plot.pdf")
+    }
+    val edges: Seq[Double] = Seq.fill(referenceCells)(0.0)
+    threshold = edges ++ threshold ++ edges
+
+    (threshold, peakIndices)
+  }
+
+  // another popular CFAR algorithm, exploited on different places, can be reused for 2D-CFAR, one reference window is sorted - can be beneficial for saving power
+  def cfarOSCA(signal: Seq[Double], referenceCells: Int, guardCells: Int, scalingFactor: Double, indexLead: Int, logMode: Boolean = false, cfarMode: String, plotEn: Boolean = false): (Seq[Double], Seq[Int]) = {
+    val totalCells = signal.size
+    val windowCells = referenceCells + guardCells
+    var threshold : Seq[Double] = Seq()
+    var peakIndices: Seq[Int] = Seq()
+
+    for (ix <- windowCells until (totalCells - windowCells)) {
+      val lead = signal.slice(ix - windowCells, ix - guardCells).sorted //.sum / referenceCells
+      val laggAvg = signal.slice(ix + guardCells + 1, ix + windowCells + 1).sum / referenceCells
+
+      val thr = cfarMode match {
+                  case "Cell Averaging" => (lead(indexLead - 1) + laggAvg)
+                  case "Smallest Of" => Seq(lead(indexLead - 1), laggAvg).min
+                  case "Greatest Of" => Seq(lead(indexLead - 1), laggAvg).max
+                  case _ =>  throw new Exception(s"Unknown CFAR type, try with Cell Averaging, Smallest Of or Greatest Of")
+                }
+
+      val scaledThr = if (logMode) thr + scalingFactor else thr * scalingFactor
+      if (scaledThr < signal(ix)) peakIndices = peakIndices :+ ix
+      threshold = threshold :+ scaledThr
+      if (scaledThr < signal(ix)) peakIndices = peakIndices :+ ix
+    }
+    if (plotEn == true) {
+      val f = Figure()
+      val p = f.subplot(0)
+      p.legend_=(true)
+      val xaxis = (0 until signal.size).map(e => e.toDouble).toSeq.toArray
+      p.xlabel = "Frequency bin"
+      p.ylabel = "Amplitude"
+
+      val thresholdPlot = threshold.toSeq
+
+      p += plot(xaxis, signal.toArray, name = "FFT input Signal")
+      p += plot(xaxis, threshold.toArray, name = "CFAR threshold") //'.'
+      p.title_=(s"Constant False Alarm Rate OSCA")
+
+      f.saveas(s"test_run_dir/CFAR_OS_Scala_Threshold_Plot.pdf")
+    }
+    val edges: Seq[Double] = Seq.fill(windowCells)(0.0)
+    threshold = edges ++ threshold ++ edges
+
+    (threshold, peakIndices)
+  }
+
   // generalized ordered statistic CFAR algorithms
   def cfarGOS(signal: Seq[Double], referenceCells: Int, guardCells: Int, indexLagg: Int, indexLead: Int, cfarMode: String, considerEdges: Boolean = false, scalingFactor: Double, logMode: Boolean = false, plotEn: Boolean = false) : (Seq[Double], Seq[Int]) = {
     val totalCells = signal.size
