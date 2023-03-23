@@ -196,7 +196,7 @@ object CFARUtils {
     (threshold, peakIndices)
   }
   // function that should follow lis-fifo-sr processing scheme
-  def cfarOSlis(signal: Seq[Double], referenceCells: Int, scalingFactor: Double, logMode: Boolean = false, k: Int = 2, plotEn: Boolean = false): (Seq[Double], Seq[Int]) = {
+  def cfarOSlis(signal: Seq[Double], referenceCells: Int, scalingFactor: Double, k: Int = 2, logMode: Boolean = false, plotEn: Boolean = false): (Seq[Double], Seq[Int]) = {
     val totalCells = signal.size
     val windowCells = referenceCells
     var threshold : Seq[Double] = Seq()
@@ -206,13 +206,20 @@ object CFARUtils {
       val lead = signal.slice(ix - referenceCells, ix)
       val lagg = signal.slice(ix, ix + referenceCells + 1) // includes cell under test as well
 
-      val thrSorted = signal.slice(ix - referenceCells, ix + referenceCells + 1). sorted
+      //println(signal.slice(ix - referenceCells, ix + referenceCells + 1))
+      val thrSorted = signal.slice(ix - referenceCells, ix + referenceCells + 1).sorted(Ordering.Double.reverse)
+
+      //println("Current sorted sequence is:")
+      //thrSorted.map { c => println(c) }
       //println("Size of thrSorted is:")
       //println(thrSorted.toString)
       var thr = thrSorted(k-1) // k is normally set to be equal to 1.5*referenceCells
-      if (signal(ix) == thr) {
-        thr =  thrSorted(k)
-      }
+      /*if (signal(ix) == thr) {
+        println("The same signal:")
+        thr = thrSorted(k)
+      }*/
+
+      //println(thr)
 
       val scaledThr = if (logMode) thr + scalingFactor else thr * scalingFactor
       if (scaledThr < signal(ix)) peakIndices = peakIndices :+ ix
@@ -473,36 +480,36 @@ class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, 
   dontTouch(initialInDone)
   initialInDone.suggestName("InitialInDone")
   val resetData = 0.U.asTypeOf(io.in.bits)
-  val en = io.in.fire() || (last && io.out.ready)
+  val en = io.in.fire || (last && io.out.ready)
   // or drop data if io.out.ready is inactive, in that case en is:
-  //val en = io.in.fire() || last
+  //val en = io.in.fire || last
   
   val (adjShiftReg, adjShiftRegOut) = AdjustableShiftRegister.returnOut(io.in.bits, maxDepth, io.depth, resetData, en)
   val cntIn  = RegInit(0.U(log2Ceil(maxDepth + 1).W))
   
-  when (io.lastIn && io.in.fire()) {
+  when (io.lastIn && io.in.fire) {
     last := true.B
   }
   
-  when (io.in.fire()) {
+  when (io.in.fire) {
     cntIn := cntIn + 1.U
   }
   // if depth is one
   when (io.depth > 1.U) {
-    when (cntIn === io.depth - 1.U && io.in.fire()) {
+    when (cntIn === io.depth - 1.U && io.in.fire) {
       initialInDone := true.B
     }
   }
   .otherwise {
-    when (io.in.fire() && io.depth === 1.U) {
+    when (io.in.fire && io.depth === 1.U) {
       initialInDone := true.B
     }
   }
   
-  val fireLastIn = io.lastIn && io.in.fire()
-  val lastOut = AdjustableShiftRegister(fireLastIn, maxDepth, io.depth, resetData = false.B, en = io.out.fire())
+  val fireLastIn = io.lastIn && io.in.fire
+  val lastOut = AdjustableShiftRegister(fireLastIn, maxDepth, io.depth, resetData = false.B, en = io.out.fire)
   
-  when (lastOut && io.out.fire()) {
+  when (lastOut && io.out.fire) {
     initialInDone := false.B
     last := false.B
     cntIn := 0.U
@@ -523,7 +530,7 @@ class AdjustableShiftRegisterStream[T <: Data](val proto: T, val maxDepth: Int, 
   dontTouch(io.parallelOut)
   io.out.bits    := Mux(io.depth === 0.U, io.in.bits, adjShiftReg)
   io.parallelOut := adjShiftRegOut // parallel output is not important
-  io.lastOut     := Mux(io.depth === 0.U, io.lastIn && io.in.fire(), lastOut)
+  io.lastOut     := Mux(io.depth === 0.U, io.lastIn && io.in.fire, lastOut)
   io.out.valid   := Mux(io.depth === 0.U, io.in.valid, initialInDone && io.in.valid || (last && en))
   if (sendCnt)
     io.cnt.get := cntIn
@@ -545,22 +552,22 @@ class CellUnderTest[T <: Data](val proto: T) extends Module {
   val resetData = 0.U.asTypeOf(io.in.bits)
   val last = RegInit(false.B)
   
-  when (io.in.fire() && ~initialInDone) {
+  when (io.in.fire && ~initialInDone) {
     initialInDone := true.B
   }
   
-  val en = io.in.fire() || (last && io.out.ready)
+  val en = io.in.fire || (last && io.out.ready)
   // or drop data if io.out.ready is inactive in that case 
-  //val en = io.in.fire() || last 
+  //val en = io.in.fire || last
   
   val cut = RegEnable(io.in.bits, resetData, en)
   val cntIn  = RegInit(0.U(1.W))
   
-  when (io.lastIn && io.in.fire()) {
+  when (io.lastIn && io.in.fire) {
     last := true.B 
   }
   
-  val fireLastIn = io.lastIn && io.in.fire() 
+  val fireLastIn = io.lastIn && io.in.fire
   val lastOut = RegEnable(fireLastIn, false.B, io.out.ready)
   
   when (lastOut && io.out.ready) {
@@ -599,7 +606,7 @@ class ShiftRegisterMemStream[T <: Data](val proto: T, val maxDepth: Int, val enI
   val writeIdxReg   = RegInit(0.U(log2Ceil(maxDepth).W))
   val last          = RegInit(false.B)
   val initialInDone = RegInit(false.B)
-  val en            = io.in.fire() || (last && io.out.ready)
+  val en            = io.in.fire || (last && io.out.ready)
   
 
   val validPrev = RegNext(io.in.valid, init=false.B)
@@ -616,16 +623,16 @@ class ShiftRegisterMemStream[T <: Data](val proto: T, val maxDepth: Int, val enI
 //     readIdxReg := readIdx
 //   }
   
-  when (writeIdxReg === io.depth - 1.U && io.in.fire()) {
+  when (writeIdxReg === io.depth - 1.U && io.in.fire) {
     initialInDone := true.B
   }
-  val fireLastIn = io.lastIn && io.in.fire()
+  val fireLastIn = io.lastIn && io.in.fire
   
   when (fireLastIn) {
     last := true.B
   }
-  val lastOut = AdjustableShiftRegister(fireLastIn, maxDepth, io.depth, resetData = false.B, en = io.out.fire())
-  val resetAll = lastOut && io.out.fire()
+  val lastOut = AdjustableShiftRegister(fireLastIn, maxDepth, io.depth, resetData = false.B, en = io.out.fire)
+  val resetAll = lastOut && io.out.fire
   when (resetAll) {
     initialInDone := false.B
     last := false.B
@@ -640,7 +647,7 @@ class ShiftRegisterMemStream[T <: Data](val proto: T, val maxDepth: Int, val enI
   val outputQueue = Module(new Queue(proto, 1, pipe=true, flow=true))
   outputQueue.io.enq.valid := validPrev
   outputQueue.io.enq.bits := mem.read(readIdx)
-  outputQueue.io.deq.ready := io.in.fire() || (last && io.out.ready) // Check  this!
+  outputQueue.io.deq.ready := io.in.fire || (last && io.out.ready) // Check  this!
   
   io.memEmpty  := writeIdxReg === 0.U && ~initialInDone
   io.memFull   := initialInDone && ~last

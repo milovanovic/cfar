@@ -42,23 +42,25 @@ class CFARIO [T <: Data: Real](params: CFARParams[T]) extends Bundle {
   val divSum = if (params.CFARAlgorithm != GOSCFARType) Some(Input(UInt(log2Ceil(log2Ceil(params.leadLaggWindowSize + 1)).W))) else None
   
   val peakGrouping = Input(Bool())
-  val cfarAlgorithm = if (params.CFARAlgorithm == GOSCACFARType) Some(Input(UInt(1.W))) else None // change thid to Bool!
+  val cfarAlgorithm = if (params.CFARAlgorithm == GOSCACFARType) Some(Input(UInt(1.W))) else None // change this to Bool!
   val cfarMode = Input(UInt(2.W))
   val windowCells = Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))
   val guardCells = Input(UInt(log2Ceil(params.guardWindowSize + 1).W))
   val subCells = if (params.includeCASH == true) Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None
   val edgesMode = if (params.edgesMode == AllEdgeModes) Some(Input(UInt(2.W))) else None
   // Ordered statistic CFAR specific control registers
-  val indexLead = if (params.CFARAlgorithm != CACFARType) Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None // Check here log2Ceil
-  val indexLagg = if (params.CFARAlgorithm != CACFARType)  Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None
+  //val indexLead = if (params.CFARAlgorithm != CACFARType) Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None
+  //val indexLagg = if (params.CFARAlgorithm != CACFARType)  Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W))) else None
+  val indexLead = if ((params.CFARAlgorithm == CACFARType) | (params.CFARAlgorithm == OSCFARType)) None else Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W)))
+  val indexLagg = if ((params.CFARAlgorithm == CACFARType) | (params.CFARAlgorithm == OSCFARType)) None else Some(Input(UInt(log2Ceil(params.leadLaggWindowSize + 1).W)))
+
+  val indexOS = if (params.CFARAlgorithm == OSCFARType) Some(Input(UInt(log2Ceil(2*params.leadLaggWindowSize + 1).W))) else None
 
   val out = Decoupled(new CFAROutFields(params.protoIn, params.protoThreshold, params.sendCut))
   val lastOut = Output(Bool())
   // can be moved to CFAROutFields
   val fftBin  = Output(UInt(log2Ceil(params.fftSize).W))
- 
-//  override def cloneType: this.type = CFARIO(params).asInstanceOf[this.type]
-}
+ }
 
 object CFARIO {
   def apply[T <: Data: Real](params: CFARParams[T]): CFARIO[T] = new CFARIO(params)
@@ -69,7 +71,6 @@ class CFARCore[T <: Data : Real : BinaryRepresentation](val params: CFARParams[T
   val cfarCore = if (params.CFARAlgorithm == CACFARType && params.includeCASH == true) Module(new CFARCoreWithASR(params) with HasIO) else if (params.CFARAlgorithm == CACFARType && params.includeCASH == false) Module(new CFARCoreWithMem(params) with HasIO) else Module(new CFARCoreWithLis(params) with HasIO)
 
   // just instatiate appropriate design
-  
   cfarCore.io.in <> io.in 
   cfarCore.io.lastIn := io.lastIn
   cfarCore.io.fftWin := io.fftWin
