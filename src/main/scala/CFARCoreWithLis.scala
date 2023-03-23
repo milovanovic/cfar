@@ -36,7 +36,8 @@ class CFARCoreWithLis[T <: Data : Real : BinaryRepresentation](val params: CFARP
   
   val lisParams = LISParams(
       proto = params.protoIn.cloneType,
-      LIStype = "LIS_FIFO",
+      LIStype = params.lisFIFOType.get,
+      LISsubType = "LIS_FIFO",
       LISsize = params.leadLaggWindowSize,
       rtcSize = true,  // use run time configurable lis size
       useSorterEmpty = true,
