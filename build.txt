@@ -6,6 +6,7 @@ lazy val cfar = Project("cfar", file("."))
     chiselSettings,
     chiselTestSettings,
     commonSettings,
+    scalacOptions += "-Ywarn-unused",
     libraryDependencies ++= Seq(
       "org.scalatest" %% "scalatest" % "3.2.+" % "test",
       "org.typelevel" %% "spire" % "0.16.2",
