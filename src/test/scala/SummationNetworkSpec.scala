@@ -12,16 +12,14 @@ import chiseltest.simulator.{VerilatorFlags}
 import scala.collection._
 import scala.util.Random
 
-//import dsptools._
 import dsptools.numbers._
-
 import org.scalatest.flatspec.AnyFlatSpec
 
 trait SummationNetworkTester {
 
   def compare_data(expected: Double, received: Double, tol: Double) {
-    println(abs(expected - received))
-    //assert(abs(expected - received) < tol, "Mismatch!!!")
+    //println(abs(expected - received))
+    assert(abs(expected - received) <= tol, "Mismatch!!!")
   }
 
   def testSumNetwork[T <: Data : Real : BinaryRepresentation](dut: SummationNetwork[T], in: Seq[Double], retiming: Boolean = true, tol: Double = 0.005) = {
@@ -38,7 +36,6 @@ trait SummationNetworkTester {
       dut.io.in(index).poke(Real[T].fromDouble(in(index), dut.protoIn))
     }
     if (retiming) {
-      println("Retiming is on!")
       dut.clock.step(log2Up(dut.n + 1))
       //dut.io.out.expect(Real[T].fromDouble(expectedSum, dut.protoOut))
       val peekedVal = dut.io.out.peek.litValue
@@ -75,14 +72,12 @@ trait SummationNetworkTester {
       }
     }
     if (retiming) {
-      println("Retiming is on!")
-      dut.clock.step(log2Ceil(nRunTime + 1))
+      //dut.clock.step(log2Up(nRunTime + 1))
+      //println(log2Up(nRunTime) + 1)
+      dut.clock.step(log2Up(nRunTime) + 1)
       //dut.io.out.expect(Real[T].fromDouble(expectedSum, dut.protoOut))
       val peekedVal = dut.io.out.peek.litValue
       val peekedValDouble = peekedVal.toDouble/frac
-      println(peekedValDouble)
-      println(peekedVal)
-      println(frac)
       compare_data(peekedValDouble, expectedSum, tol)
     }
     else {
@@ -97,31 +92,12 @@ trait SummationNetworkTester {
 
 class SumNetworkSpec extends AnyFlatSpec with ChiselScalatestTester with SummationNetworkTester {
 
-  /* parameters of sumnetwork */
-  var testSignal: Seq[Double] = Seq()
-  val inputProto = FixedPoint(16.W, 8.BP)
-  val outputProto = FixedPoint(22.W, 8.BP)
-  val n = 9
-  val random = true
-  val runTime = false
-  val retiming = true
-  val nRunTime = 9
-
   var next_n = 8
-
-  if (isPow2(n) || isPow2(n-1)) {
-    next_n = n
-  }
-  else {
-    next_n = pow(2, log2Ceil(n)).toInt
-  }
-  println(next_n)
   Random.setSeed(11110L)
 
-  // test UInt
+  // test UInt data type
   for (retiming <- Seq(false, true)) {
     for (n <- Seq(4, 5, 8, 9, 32)) {
-  //  for (n <- Seq(4)) {
       for (runTime <- Seq(false)) {
         it should f"work for UInt, n equal to $n,  retiming = $retiming, runTime = $runTime" ignore {
           if (isPow2(n) || isPow2(n-1)) {
@@ -132,18 +108,18 @@ class SumNetworkSpec extends AnyFlatSpec with ChiselScalatestTester with Summati
           }
           val inputProto = UInt(16.W)
           val outputProto = UInt((16 + log2Up(n)).W)
-          val testSignal = Seq.fill(n)(Random.nextInt(1<<(inputProto.getWidth)).toDouble)
+          val in = Seq.fill(n)(Random.nextInt(1<<(inputProto.getWidth)).toDouble)
           test(new SummationNetwork(inputProto,
                                     outputProto,
                                     next_n,
                                     runTime,
-                                    retiming)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSumNetwork(dut, testSignal, retiming, tol = 0) }
+                                    retiming)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSumNetwork(dut, in, retiming, tol = 0) }
         }
       }
     }
   }
 
-  // test FixedPoint
+  // test FixedPoint data type
   for (retiming <- Seq(false, true)) {
     for (n <- Seq(4, 5, 8, 9, 32)) {
       for (runTime <- Seq(false)) {
@@ -162,71 +138,50 @@ class SumNetworkSpec extends AnyFlatSpec with ChiselScalatestTester with Summati
                                     outputProto,
                                     next_n,
                                     runTime,
-                                    retiming)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSumNetwork(dut, testSignal, retiming, tol = 0.5) }
+                                    retiming)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSumNetwork(dut, in, retiming, tol = 0.5) }
         }
       }
     }
   }
 
-  for (retiming <- Seq(false, true)) {
-    for (n <- Seq(4, 5, 8, 9)) {
-      for (runTime <- Seq(true)) {
-        it should f"work for SInt, n equal to $n,  retiming = $retiming, runTime = $runTime" in {
-          if (isPow2(n) || isPow2(n-1)) {
-            next_n = n
-          }
-          else {
-            next_n = pow(2, log2Ceil(n)).toInt
-          }
-          val inputProto = SInt(16.W)
-          val outputProto = SInt((16 + log2Up(n)).W)
-          val in = Seq.fill(n)((Random.nextInt((1<<(inputProto.getWidth-1))*2) - (1<<(inputProto.getWidth-1))).toDouble)
+  // test SInt data type
+  for (retiming <- Seq(true, false)) {
+    for (n <- Seq(4, 5, 8)) {
+      for (runTime <- Seq(false, true)) {
+        if (isPow2(n) || isPow2(n-1)) {
+          next_n = n
+        }
+        else {
+          next_n = pow(2, log2Ceil(n)).toInt
+        }
+        val inputProto = SInt(16.W)
+        val outputProto = SInt((16 + log2Up(n)).W)
+        val in = Seq.fill(n)((Random.nextInt((1<<(inputProto.getWidth-1))*2) - (1<<(inputProto.getWidth-1))).toDouble)
 
-          if (runTime) {
-            val indices = 2 until n by 1
-            for (r <- indices) {
+        if (runTime) {
+          val indices = 2 to n by 1
+          for (r <- indices) {
+            it should f"work for SInt, n equal to $n,  retiming = $retiming, runTime = true and runtime n value equal to $r" in {
               test(new SummationNetwork(inputProto,
-                                    outputProto,
-                                    next_n,
-                                    runTime,
-                                    retiming)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testRunTimeSumNetwork(dut, testSignal, r, retiming, tol = 0.5) }
+                                        outputProto,
+                                        next_n,
+                                        runTime,
+                                        retiming)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testRunTimeSumNetwork(dut, in, r, retiming, tol = 0) }
             }
           }
-          else {
-            test(new SummationNetwork(inputProto,
-                                    outputProto,
-                                    next_n,
-                                    runTime,
-                                    retiming)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSumNetwork(dut, testSignal, retiming, tol = 0.5) }
+        }
+        else {
+            it should f"work for SInt, n equal to $n,  retiming = $retiming, runTime = false" in {
+              test(new SummationNetwork(inputProto,
+                                        outputProto,
+                                        next_n,
+                                        runTime,
+                                        retiming)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSumNetwork(dut, in, retiming, tol = 0) }
           }
         }
       }
     }
   }
-
-  /*if (random == false) {
-    val testSignaltmp = inputProto match {
-      case f: FixedPoint => (0 until n).map(c => c.toDouble)
-      case d: DspReal => Seq.fill(n)((Random.nextInt(Double.MaxValue.toInt) - Double.MaxValue.toInt).toDouble)
-    }
-    testSignal = testSignaltmp
-  }
-  else {
-    val testSignaltmp = inputProto match {
-      case f: FixedPoint => Seq.fill(n)((Random.nextDouble()*2-1) * ((1<<inputProto.getWidth - inputProto.binaryPoint.get-1)))
-      //case d: SInt =>   Seq.fill(n)((Random.nextInt((1<<(inputProto.getWidth-1))*2) - (1<<(inputProto.getWidth-1))).toDouble)
-    }
-    testSignal = testSignaltmp
-  }
-  testSignal.map { c => println(c) }
-
-  it should "test summation network" ignore {
-    test(new SummationNetwork(inputProto, outputProto, next_n, runTime, retiming)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSumNetwork(dut, testSignal, retiming) }
-  }
-
-  it should "test summation network with run-time" in {
-    test(new SummationNetwork(inputProto, outputProto, next_n, true, false)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testRunTimeSumNetwork(dut, testSignal, nRunTime, true) }
-  }*/
 }
 
 

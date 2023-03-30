@@ -9,9 +9,6 @@ import dsptools.numbers._
 
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 
-
-
-
 object FindSum
 {
   /** Find minimum inside input vector data
@@ -19,18 +16,19 @@ object FindSum
     * @param in1 input1 data sequence (input to the SummationNetwork)
     * @param in2 input2 data sequence (sum seq from the upper layer)
     * @param n size of the input sequence
-    * @param size if run time is not active have the same value as parameter n
+    * @param size if run time is not active then it is None
+    * @param retiming when it is true, then pipeline registers are added after each stage inside network
+    * @param initialN size of the input sequence in the first recursion iteration
     *
     * @example {{{
-    * val findMin = FindMin(in1, in2, 16, 16.U)
+    * val findSum = FindSum(in1, in2, 16, Some(5.U), true)
     * }}}
     */
   // n needs to always be power of 2 here!
-  def apply[T <: Data: Real](in1: Seq[T], in2: Seq[T], n: Int, size: Option[UInt], retiming: Boolean = false): T = {
+  def apply[T <: Data: Real](in1: Seq[T], in2: Seq[T], n: Int, size: Option[UInt], retiming: Boolean = false, initialN: Int = 256): T = {
     require(n > 0, "Input vector size should be positive")
     if (n != 1) {
-      val sel_n = (n/2 + 1).U > size.getOrElse(n.U)
-      // if run time is off provides that sel signals are always false
+      val sel_n = n.U >= size.getOrElse(initialN.U) //(n/2).U >= size.getOrElse(n.U) //(n/2 + 1).U > size.getOrElse(n.U) // if run time is off provides that sel signals are always false
       val input_to_sums = in1.zip(in2).map { case (a,b) => Mux(sel_n, a, b) }
       val sums = DspContext.alter(
                   DspContext.current.copy(overflowType = Grow, binaryPointGrowth = 2)) {
@@ -43,11 +41,10 @@ object FindSum
   }
 }
 
-// binaryGrowth logic should be considered, but I believe that it is not necessary to use that, that is
 // https://stackoverflow.com/questions/53095845/vector-of-regenable
 // DspContext should be defined, retiming can be defined in the form of vectors of enable signals
-// +& does not work for parameter T, define grow logic inside DspContext!
 // maybe add enable signal and valid signal as well inside input interface
+
 class SummationNetwork[T <: Data: Real](val protoIn: T, val protoOut: T, val n: Int = 16, val runTime: Boolean = true, val retiming: Boolean = false) extends Module {
   require(n > 0, "Size of the input vector should be positive")
   val io = IO(new Bundle {
@@ -92,7 +89,7 @@ class SummationNetwork[T <: Data: Real](val protoIn: T, val protoOut: T, val n: 
           }
         }
         else {
-          io.out :=  DspContext.alter(DspContext.current.copy(overflowType = Grow)) { sumFinal + io.in(n - 1) }
+          io.out := DspContext.alter(DspContext.current.copy(overflowType = Grow)) { sumFinal context_+ io.in(n - 1) }
         }
       }
     }
@@ -149,7 +146,6 @@ class SummationNetwork[T <: Data: Real](val protoIn: T, val protoOut: T, val n: 
       io.out := io.in(0)
   }
 }
-
 
 object SummationNetworkApp extends App
 {
