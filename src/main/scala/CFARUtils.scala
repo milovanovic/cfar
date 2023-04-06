@@ -154,6 +154,55 @@ object CFARUtils {
     }
     (threshold, peakIndices)
   }
+
+  // sliding sum
+  def SlidingSum(signal: Seq[Double], depth: Int, guardCells: Int, considerEdges: Boolean = false): (Seq[Double]) = {
+
+    require(depth > 0, "Depth needs to be positive!")
+    require(depth % 2 == 1, "Depth needs to be odd!") // shall be odd
+    require(guardCells % 2 == 1 | guardCells == 0, "Number of guard cells needs to be odd or equal to zero!")   // shall be odd or zero
+
+    val totalCells = signal.size
+    var slidingSum : Seq[Double] = Seq()
+    var sum: Double = 0.0
+
+    if (guardCells == 0) {
+      for (ix <- 0 until totalCells) {
+        if (ix >= depth/2 & (ix < (totalCells - depth/2))) {
+          sum = signal.slice(ix - depth/2, ix + depth/2 + 1).sum
+        }
+        else if (ix < depth/2) {
+          sum = signal.slice(0, ix + depth/2 + 1).sum
+        }
+        else if (ix >= (totalCells - depth/2)) {
+          sum = signal.slice(ix - depth/2, totalCells).sum
+        }
+       // println(sum)
+        slidingSum = slidingSum :+ sum
+      }
+    }
+    else {
+      for (ix <- 0 until totalCells) {
+        if (ix >= (depth + guardCells/2) | (ix < (totalCells - depth - guardCells/2))) {
+          val leadSum = signal.slice(ix - depth - guardCells/2, ix - guardCells/2).sum
+          val laggSum = signal.slice(ix + guardCells/2, ix + depth + guardCells/2).sum
+          sum = leadSum + laggSum
+        }
+        else if (ix < (depth + guardCells/2)) {
+          val leadSum = signal.slice(ix + guardCells/2, depth + guardCells/2 + ix).sum // this one is ok
+          val laggSum = signal.slice(depth + guardCells/2, depth + guardCells/2 + ix).sum
+          sum = leadSum + laggSum
+        }
+        else if (ix > (totalCells - depth - guardCells/2)) {
+          val leadSum = signal.slice(totalCells - depth - guardCells/2, ix).sum
+          val laggSum = signal.slice(ix - depth - guardCells/2, ix - guardCells/2).sum // this one is ok!
+          sum = leadSum + laggSum
+        }
+        slidingSum = slidingSum :+ sum
+      }
+    }
+    slidingSum
+  }
   
   // ordered statistic CFAR algorithm
   // can not provide that considerEdges is true

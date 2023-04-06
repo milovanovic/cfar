@@ -9,7 +9,19 @@ import dsptools.numbers._
 
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 
-case class SlidingSumParams[T <: Data: Real](
+abstract trait HasSlidingSumIO extends Module {
+  val io: Bundle
+}
+
+//val fftBin  = Output(UInt(log2Ceil(params.fftSize).W))
+class SlidingSumOutFields [T <: Data: Real: BinaryRepresentation] (protoIn: T, protoOut: T, sendMiddle: Boolean, sendBin: Boolean, windowSize: Int) extends Bundle {
+  val bin            = if (sendBin) Some(Output(UInt(log2Ceil(windowSize).W))) else None
+  val middleCell     = if (sendMiddle) Some(Output(protoIn)) else None
+  val slidingSum     = Output(protoOut) // threshold
+}
+
+
+case class SlidingSumParams[T <: Data: Real: BinaryRepresentation](
   protoIn               : T,                               // Data type of the input data
   protoOut              : T,                               // Data type of the output data
   depth                 : Int = 16,                        // If guard cells are included then this parameter defines depth of the left and right sliding windows;
@@ -20,7 +32,10 @@ case class SlidingSumParams[T <: Data: Real](
   retiming              : Boolean = true,                  // Enables or disables pipe registers inside design
 
   testWindowSize        : Int = 256,                       // In 2D-CFAR this is a range or Doppler dimension of 2D-CFAR
-  runTimeTestWindowSize : Boolean = true                   // Enables run-time configurable test window size
+  runTimeTestWindowSize : Boolean = true,                  // Enables run-time configurable test window size
+  sendMiddle            : Boolean = false,                 // For 2D-CFAR this is cell under test
+  sendBin               : Boolean = false,                 // Current FFT bin
+  numAddPipes           : Int = 0                          // Number of pipes added after plus operator
 ) {
   require(guardCells < depth)
   require(depth > 1)
@@ -28,38 +43,58 @@ case class SlidingSumParams[T <: Data: Real](
   requireIsChiselType(protoOut)
 }
 
-class SlidingSum[T <: Data: Real](val params: SlidingSumParams[T]) extends Module {
-  val io = IO(new Bundle {
-    val in = Flipped(Decoupled(params.protoIn.cloneType))
-    val depthRunTime = if (params.runTimeDepth) Some(Input(UInt(log2Up(params.depth + 1).W))) else None
-    val guardRunTime = if (params.runTimeDepth) Some(Input(UInt(log2Up(params.guardCells + 1).W))) else None
-    val windowRunTime = if (params.runTimeTestWindowSize) Some(Input(UInt(log2Up(params.testWindowSize + 1).W))) else None
-    val out = Decoupled(params.protoOut.cloneType)
-    val lastIn = Input(Bool())
-    val lastOut = Output(Bool())
-  })
+class SlidingSumIO [T <: Data: Real: BinaryRepresentation](params: SlidingSumParams[T]) extends Bundle {
+  val in = Flipped(Decoupled(params.protoIn))
+  val lastIn = Input(Bool())
+  val depthRunTime = if (params.runTimeDepth) Some(Input(UInt(log2Up(params.depth + 1).W))) else None
+  val guardRunTime = if (params.runTimeGuard) Some(Input(UInt(log2Up(params.guardCells + 1).W))) else None
+  val windowRunTime = if (params.runTimeTestWindowSize) Some(Input(UInt(log2Up(params.testWindowSize + 1).W))) else None
+  val out = Decoupled(new SlidingSumOutFields(params.protoIn, params.protoOut, params.sendMiddle, params.sendBin, params.testWindowSize)) //Decoupled(params.protoOut.cloneType)
+  val lastOut = Output(Bool())
+}
+
+object SlidingSumIO {
+  def apply[T <: Data: Real: BinaryRepresentation](params: SlidingSumParams[T]): SlidingSumIO[T] = new SlidingSumIO(params)
+}
+
+
+class SlidingSum[T <: Data: Real: BinaryRepresentation](val params: SlidingSumParams[T]) extends Module with HasSlidingSumIO {
+  val io = IO(SlidingSumIO(params))
 
   if (params.guardCells == 0) {
+    // this sliding sum needs to follow other sliding sums, result should be available in the same moment as it is for other sliding sums
+    // this sliding sum can be used later for OSCA CFAR that includes linear sorter as the solution
+    // think about moving this code to separate modul.
 
-    val sumT: T = (io.in.bits * log2Ceil(params.depth)).cloneType
+    val sumT: T = params.protoOut //(io.in.bits * log2Ceil(params.depth + 1)).cloneType
     val sumWin = RegInit(t = sumT, init = 0.U.asTypeOf(sumT))
 
     val cntIn = RegInit(0.U(log2Ceil(params.testWindowSize).W))
     val cntOut = RegInit(0.U(log2Ceil(params.testWindowSize).W))
     val initialInDone = RegInit(false.B)
+    val flushing = RegInit(false.B)
+    val condition = WireInit(false.B)
 
-    val uniqueSlidingWin = Module(new AdjustableShiftRegisterStream(params.protoIn, params.depth))
+    val uniqueSlidingWin = Module(new AdjustableShiftRegisterStream(params.protoIn, params.depth, false, false, false))
     uniqueSlidingWin.io.in <> io.in
     uniqueSlidingWin.io.depth := io.depthRunTime.getOrElse(params.depth.U)
     uniqueSlidingWin.io.lastIn := io.lastIn
-    uniqueSlidingWin.io.out.ready := io.out.ready // this is a question, maybe it will not be bidirectional connection
+    uniqueSlidingWin.io.out.ready := io.out.ready
     io.lastOut := uniqueSlidingWin.io.lastOut
-    val latency = params.depth.U // temporary solution
+    val latency = io.depthRunTime.getOrElse(params.depth.U) >> 1 // half of the window
+    io.out.valid := initialInDone && io.in.fire || flushing
+    io.out.bits.slidingSum := sumWin
+    //io.in.ready := ~initialInDone || io.out.ready && ~flushing
+
+    //  val latency = io.windowCells +& io.guardCells +& 1.U //+& thresholdPip.U // + retimingInt
+    when (io.lastIn) {
+      flushing := true.B
+    }
 
     when (io.in.fire) {
       cntIn := cntIn + 1.U
     }
-    when (cntIn === (latency - 1.U) && io.in.fire) {
+    when (cntIn === latency && io.in.fire) {
       initialInDone := true.B
     }
 
@@ -74,6 +109,13 @@ class SlidingSum[T <: Data: Real](val params: SlidingSumParams[T]) extends Modul
     }
 
     when (io.lastOut) {
+      flushing := false.B
+      initialInDone := false.B
+    }
+
+    condition := cntOut > (io.windowRunTime.getOrElse(params.testWindowSize.U) - (io.depthRunTime.getOrElse(params.depth.U) >> 1) - 2.U)
+
+    when (io.lastOut) {
       sumWin := 0.U.asTypeOf(sumT)
     }
     .elsewhen (io.in.fire) {
@@ -86,9 +128,31 @@ class SlidingSum[T <: Data: Real](val params: SlidingSumParams[T]) extends Modul
         sumWin := sumWin + uniqueSlidingWin.io.in.bits
       }
     }
-    // regFull -> when regFull then we have a valid output that should be subtracted from the init sum
+
+    when (condition && io.out.fire) {
+      sumWin := sumWin - uniqueSlidingWin.io.out.bits
+    }
   }
   else {
-
+    val slidingSum = Module(new SlidingSumWithGuardAndCut(params))
+    slidingSum.io <> io
   }
 }
+
+object SlidingSumApp extends App
+{
+  val params: SlidingSumParams[FixedPoint] = SlidingSumParams(
+    protoIn = FixedPoint(16.W, 12.BP),
+    protoOut = FixedPoint(20.W, 12.BP),
+    depth = 16,
+    runTimeDepth = true,
+    runTimeGuard = false,
+    guardCells = 0,
+    retiming = false,
+    runTimeTestWindowSize = false,
+    testWindowSize = 256
+  )
+  (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(() => new SlidingSum(params))))
+}
+
+
