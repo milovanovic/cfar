@@ -57,7 +57,7 @@ class SummationNetwork[T <: Data: Real](val protoIn: T, val protoOut: T, val n: 
 
   if (n != 1) {
     if (n % 2 == 0) {
-      val partial_sums = if (retiming == true) io.in.grouped(2).toSeq.map(pair => DspContext.alter(DspContext.current.copy(overflowType = Grow, binaryPointGrowth = 2)) { RegNext(pair(0) context_+ pair(1)) } ) else io.in.grouped(2).toSeq.map(pair =>  DspContext.alter(DspContext.current.copy(overflowType = Grow, binaryPointGrowth = 2)) { pair(0) context_+ pair(1) } )
+      val partial_sums = if (retiming == true) io.in.grouped(2).toSeq.map(pair => DspContext.alter(DspContext.current.copy(overflowType = Grow, binaryPointGrowth = 2)) { RegNext(pair(0) context_+ pair(1)) } ) else io.in.grouped(2).toSeq.map(pair => DspContext.alter(DspContext.current.copy(overflowType = Grow, binaryPointGrowth = 2)) { pair(0) context_+ pair(1) } )
       val sumFinal = if (retiming) RegNext(FindSum(io.in.take(n/2), partial_sums, n/2, io.inSize, retiming)) else FindSum(io.in.take(n/2), partial_sums, n/2, io.inSize, retiming)
 
       when (size % 2.U === 0.U) {
