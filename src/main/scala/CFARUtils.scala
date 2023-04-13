@@ -161,7 +161,6 @@ object CFARUtils {
     require(depth > 0, "Depth needs to be positive!")
     require(depth % 2 == 1, "Depth needs to be odd!") // shall be odd
     require(guardCells % 2 == 1 | guardCells == 0, "Number of guard cells needs to be odd or equal to zero!")   // shall be odd or zero
-
     val totalCells = signal.size
     var slidingSum : Seq[Double] = Seq()
     var sum: Double = 0.0
@@ -183,20 +182,28 @@ object CFARUtils {
     }
     else {
       for (ix <- 0 until totalCells) {
-        if (ix >= (depth + guardCells/2) | (ix < (totalCells - depth - guardCells/2))) {
+        if (ix >= (depth + guardCells/2) & (ix < (totalCells - depth - guardCells/2))) {
           val leadSum = signal.slice(ix - depth - guardCells/2, ix - guardCells/2).sum
-          val laggSum = signal.slice(ix + guardCells/2, ix + depth + guardCells/2).sum
+          //println(signal.slice(ix - depth - guardCells/2, ix - guardCells/2))
+          val laggSum = signal.slice(ix + guardCells/2 + 1, ix + depth + guardCells/2 + 1).sum
+          //println(signal.slice(ix + guardCells/2 + 1, ix + depth + guardCells/2 + 1))
           sum = leadSum + laggSum
+          //println(sum)
         }
         else if (ix < (depth + guardCells/2)) {
-          val leadSum = signal.slice(ix + guardCells/2, depth + guardCells/2 + ix).sum // this one is ok
-          val laggSum = signal.slice(depth + guardCells/2, depth + guardCells/2 + ix).sum
+          val leadSum = signal.slice(0, ix - guardCells/2).sum
+          val laggSum = signal.slice(ix + guardCells/2 + 1, ix + depth + guardCells/2 + 1).sum
           sum = leadSum + laggSum
+         // println(signal.slice(0, ix-guardCells/2)) // correct
+         // println(signal.slice(ix + guardCells/2 + 1, ix + depth + guardCells/2 + 1)) // correct
+          //println(sum)
         }
-        else if (ix > (totalCells - depth - guardCells/2)) {
-          val leadSum = signal.slice(totalCells - depth - guardCells/2, ix).sum
+        else if (ix >= (totalCells - depth - guardCells/2)) {
+          val leadSum = signal.slice(ix + guardCells/2 + 1, totalCells).sum
           val laggSum = signal.slice(ix - depth - guardCells/2, ix - guardCells/2).sum // this one is ok!
           sum = leadSum + laggSum
+        //  println(signal.slice(ix + guardCells/2 + 1, totalCells))
+        //  println(signal.slice(ix - depth - guardCells/2, ix - guardCells/2))// this one is good
         }
         slidingSum = slidingSum :+ sum
       }
@@ -657,7 +664,6 @@ class ShiftRegisterMemStream[T <: Data](val proto: T, val maxDepth: Int, val enI
   val initialInDone = RegInit(false.B)
   val en            = io.in.fire || (last && io.out.ready)
   
-
   val validPrev = RegNext(io.in.valid, init=false.B)
   when (writeIdxReg + 1.U >= io.depth) {
     readIdx := writeIdxReg - io.depth + 1.U
