@@ -13,14 +13,15 @@ abstract trait HasSlidingSumIO extends Module {
   val io: Bundle
 }
 
-//val fftBin  = Output(UInt(log2Ceil(params.fftSize).W))
-class SlidingSumOutFields [T <: Data: Real: BinaryRepresentation] (protoIn: T, protoOut: T, sendMiddle: Boolean, sendBin: Boolean, windowSize: Int) extends Bundle {
+class SlidingSumOutFields [T <: Data: Real: BinaryRepresentation] (protoIn: T, protoOut: T, sendMiddle: Boolean, sendBin: Boolean, windowSize: Int, sendNeighbs: Boolean) extends Bundle {
   val bin            = if (sendBin) Some(Output(UInt(log2Ceil(windowSize).W))) else None
-  val middleCell     = if (sendMiddle) Some(Output(protoIn)) else None
-  val slidingSum     = Output(protoOut) // threshold
+  val middleCell     = if (sendMiddle) Some(Output(protoIn)) else None // Middle cell can be neighbour cell as well in vertical direction
+  val leftNeighbour  = if (sendNeighbs) Some(Output(protoIn)) else None
+  val rightNeighbour = if (sendNeighbs) Some(Output(protoIn)) else None
+  val slidingSum     = Output(protoOut)
 }
 
-
+// think about adding  more than one method for edge cases!
 case class SlidingSumParams[T <: Data: Real: BinaryRepresentation](
   protoIn               : T,                               // Data type of the input data
   protoOut              : T,                               // Data type of the output data
@@ -34,10 +35,11 @@ case class SlidingSumParams[T <: Data: Real: BinaryRepresentation](
   testWindowSize        : Int = 256,                       // In 2D-CFAR this is a range or Doppler dimension of 2D-CFAR
   runTimeTestWindowSize : Boolean = true,                  // Enables run-time configurable test window size
   sendMiddle            : Boolean = false,                 // For 2D-CFAR this is cell under test
+  sendNeighbs           : Boolean = false,                 // Can be useful for peakGrouping logic
   sendBin               : Boolean = false,                 // Current FFT bin
   numAddPipes           : Int = 0                          // Number of pipes added after plus operator
 ) {
-  require(guardCells < depth)
+  //require(guardCells <= depth)
   require(depth > 1)
   requireIsChiselType(protoIn)
   requireIsChiselType(protoOut)
@@ -49,7 +51,7 @@ class SlidingSumIO [T <: Data: Real: BinaryRepresentation](params: SlidingSumPar
   val depthRunTime = if (params.runTimeDepth) Some(Input(UInt(log2Up(params.depth + 1).W))) else None
   val guardRunTime = if (params.runTimeGuard) Some(Input(UInt(log2Up(params.guardCells + 1).W))) else None
   val windowRunTime = if (params.runTimeTestWindowSize) Some(Input(UInt(log2Up(params.testWindowSize + 1).W))) else None
-  val out = Decoupled(new SlidingSumOutFields(params.protoIn, params.protoOut, params.sendMiddle, params.sendBin, params.testWindowSize)) //Decoupled(params.protoOut.cloneType)
+  val out = Decoupled(new SlidingSumOutFields(params.protoIn, params.protoOut, params.sendMiddle, params.sendBin, params.testWindowSize, params.sendNeighbs)) //Decoupled(params.protoOut.cloneType)
   val lastOut = Output(Bool())
 }
 
@@ -108,7 +110,7 @@ class SlidingSum[T <: Data: Real: BinaryRepresentation](val params: SlidingSumPa
       cntOut := 0.U
     }
 
-    when (io.lastOut) {
+    when (io.lastOut && io.out.fire) {
       flushing := false.B
       initialInDone := false.B
     }
