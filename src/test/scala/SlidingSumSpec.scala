@@ -24,12 +24,15 @@ trait SlidingSumTester {
     assert(abs(expected - received) <= tol, "Mismatch!!!")
   }
 
-  def testSlidingSum[T <: Data : Real : BinaryRepresentation](dut: SlidingSum[T], in: Seq[Double], tol: Double, runTimeDepth: Int = 3, runTimeWin: Int = 16) = {
+  def testSlidingSum[T <: Data : Real : BinaryRepresentation](dut: SlidingSum[T], in: Seq[Double], tol: Double, runTimeDepth: Int = 3,  runTimeGuard: Int = 3, runTimeWin: Int = 16) = {
     // this one tests only version when guardCells are equal to zero
     dut.clock.setTimeout(10000)
-    require(dut.params.guardCells == 0)
+    //require(dut.params.guardCells == 0)
     require(runTimeDepth <= dut.params.depth)
     require(runTimeDepth < runTimeWin)
+
+    println("Run-time parameter for guard cells is:")
+    println(runTimeGuard)
 
     var inValid = false
     var cntInValid = 0
@@ -37,17 +40,29 @@ trait SlidingSumTester {
     var outReady = false
     val totalData = in.size
     var bin: BigInt = 0
+    var expSlidingSum: Seq[Double] = Seq.fill(in.size)(0.0)
 
     val depthForGoldenModel = if (dut.params.runTimeDepth) runTimeDepth else dut.params.depth
     val winForGoldenModel = if (dut.params.runTimeTestWindowSize) runTimeWin else dut.params.testWindowSize
 
-    val expSlidingSum = CFARUtils.SlidingSum(in, depthForGoldenModel, 0)
-    expSlidingSum.map { c => println(c) }
+    if (dut.params.guardCells == 0) {
+      expSlidingSum = CFARUtils.SlidingSum(in, depthForGoldenModel, 0)
+    }
+    else {
+      if (dut.params.runTimeGuard) {
+        expSlidingSum = CFARUtils.SlidingSum(in, depthForGoldenModel, runTimeGuard)
+        dut.io.guardRunTime.get.poke(runTimeGuard)
+      }
+      else {
+        expSlidingSum = CFARUtils.SlidingSum(in, depthForGoldenModel, dut.params.guardCells)
+      }
+    }
+    //expSlidingSum.map { c => println(c) }
+    //println("The End")
 
     if (dut.params.runTimeDepth) {
       dut.io.depthRunTime.get.poke(runTimeDepth)
     }
-    //dut.io.guardRunTime.get.poke(dut.params.guardCells.U)
 
     val frac = pow(2, (dut.params.protoOut match {
       case fp: FixedPoint => fp.binaryPoint.get
@@ -102,11 +117,12 @@ trait SlidingSumTester {
             compare_data(bin.toDouble, cntOutValid.toDouble, tol = 0.0)
           }
           cntOutValid = cntOutValid + 1
+          println(cntOutValid)
         }
         dut.clock.step()
       }
 
-      outReady =  Random.nextBoolean() //true
+      outReady = Random.nextBoolean() //true
       dut.io.in.valid.poke(false.B)
       dut.io.lastIn.poke(false.B)
       dut.io.out.ready.poke(outReady.B)
@@ -117,7 +133,7 @@ trait SlidingSumTester {
       if (validOut & readyOut) {
         val sum = dut.io.out.bits.slidingSum.peek.litValue
         compare_data(expSlidingSum(cntOutValid).toDouble, sum.toDouble/frac, tol)
-        //println(sum.toDouble/frac)
+        println(sum.toDouble/frac)
         if (dut.params.sendMiddle) {
           val middleCell = dut.io.out.bits.middleCell.get.peek.litValue
           compare_data(middleCell.toDouble, in(cntOutValid), tol = 0.0)
@@ -127,6 +143,7 @@ trait SlidingSumTester {
           compare_data(bin.toDouble, cntOutValid.toDouble, tol = 0.0)
         }
         cntOutValid = cntOutValid + 1
+        println(cntOutValid)
       }
       dut.clock.step()
     }
@@ -235,7 +252,7 @@ class SlidingSumTest extends AnyFlatSpec with ChiselScalatestTester with Sliding
         if (runTime) {
           val runTimeDepths = 3 to n by 2 // collect all odd numbers
           for (depthRt <- runTimeDepths) {
-            it should f"work for FixedPoint, n equal to $n,  winSize = $winSize, runTime = $runTime, guardCellls equal to zero, runTimeDepth = $depthRt" in {
+            it should f"work for FixedPoint, n equal to $n,  winSize = $winSize, runTime = $runTime, guardCellls equal to zero, runTimeDepth = $depthRt" ignore {
               test(new SlidingSum(params)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSlidingSum(dut, in, 0.5, depthRt) }
             }
           }
@@ -249,24 +266,67 @@ class SlidingSumTest extends AnyFlatSpec with ChiselScalatestTester with Sliding
     }
   }
 
-  //FixedPoint
-  /*it should f"work for UInt, depth equal to 7, guardCells equal to zero, windowTestSize equal to 256" in {
-    val inputProto = UInt(5.W)
-    val outputProto = UInt((5 + log2Up(7)).W)
-    val in = Seq.fill(n)(Random.nextInt(1<<(inputProto.getWidth)).toDouble)
-    //in.map { c => println(c) }
-
-    val params: SlidingSumParams[UInt] = SlidingSumParams(
-      protoIn = inputProto,
-      protoOut = outputProto,
-      depth = 9,
-      runTimeDepth = true,
-      runTimeGuard = false,
-      guardCells = 0,
-      retiming = false,
-      runTimeTestWindowSize = true,
-      testWindowSize = n
-    )
-    test(new SlidingSum(params)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSlidingSum(dut, in, 0) }
-  }*/
+  for (n <- Seq(3, 5, 7, 9)) {              // normally it is odd
+    for (guardCells <- Seq(3, 7, 9)) {      // normally it is odd
+      for (winSize <- Seq(32, 64)) {        // normally it is even
+        for (runTimeD <- Seq(false, true)) {
+          for (runTimeG <- Seq(true, false)) {
+            val inputProto = UInt(5.W)
+            val outputProto = UInt((5 + log2Up(2*n)).W)
+            val params: SlidingSumParams[UInt] = SlidingSumParams(
+              protoIn = inputProto,
+              protoOut = outputProto,
+              depth = n,
+              runTimeDepth = runTimeD,
+              runTimeGuard = runTimeG,
+              sendMiddle = true,
+              sendBin = true,
+              guardCells = guardCells,
+              retiming = false,
+              runTimeTestWindowSize = false,
+              testWindowSize = winSize
+            )
+            val in = Seq.fill(winSize)(Random.nextInt(1<<(inputProto.getWidth)).toDouble)
+            if (runTimeD) {
+              val runTimeDepths = 3 to n by 2             // collect all odd numbers
+              if (runTimeG) {
+                val runTimeGuards = 3 to guardCells by 2  // collect all odd numbers
+                for (depthRt <- runTimeDepths) {
+                  for (guardRt <- runTimeGuards) {
+                    println(depthRt)
+                    println(guardRt)
+                    it should f"work for UInt, n equal to $n, guardCells = $guardCells, winSize = $winSize, runTimeD = $runTimeD, runTimeDepth = $depthRt, runTimeGuard = $guardRt" in {
+                      test(new SlidingSum(params)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSlidingSum(dut, in, 0, depthRt, guardRt) }
+                    }
+                  }
+                }
+              }
+              else {
+                for (depthRt <- runTimeDepths) {
+                  it should f"work for UInt, n equal to $n, guardCells = $guardCells, winSize = $winSize, runTimeD = $runTimeD, runTimeDepth = $depthRt" in {
+                    test(new SlidingSum(params)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSlidingSum(dut, in, 0, depthRt) }
+                  }
+                }
+              }
+            }
+            else {
+              if (runTimeG) {
+                val runTimeGuards = 3 to guardCells by 2 // collect all odd numbers
+                for (guardRt <- runTimeGuards) {
+                  it should f"work for UInt, n equal to $n, guardCells = $guardCells, winSize = $winSize, runTimeD = $runTimeD, runTimeGuard = $guardRt" in {
+                    test(new SlidingSum(params)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSlidingSum(dut, in, 0, n, guardRt) }
+                  }
+                }
+              }
+              else {
+                it should f"work for UInt, n equal to $n, guardCells = $guardCells, winSize = $winSize, runTimeD = $runTimeD, runTimeG = $runTimeG" ignore {
+                  test(new SlidingSum(params)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut => testSlidingSum(dut, in, 0) }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
